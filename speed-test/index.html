@@ -52,7 +52,15 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .legend{display:flex;gap:14px;font:12px var(--mono);color:var(--muted);flex-wrap:wrap}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
 .controls{display:grid;gap:10px}
+.settings{display:grid;gap:10px}
+.bar{display:flex;gap:8px;flex-wrap:wrap}
 .fsonly{display:none}
+input[type=number]{font:600 16px var(--mono);width:5.5em;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--fg)}
+.calib .row{gap:8px;margin-top:4px}
+.calib .note{display:block;margin-top:4px}
+body.fs .settings{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));max-height:55vh;overflow:auto}
+body.fs .settings.hide{display:none}
+body.fs .calib .note{color:#cfd8dc}
 /* Full-screen landscape: camera fills the screen, controls float along the bottom. */
 body.fs .stage{position:fixed;inset:0;border-radius:0;aspect-ratio:auto;z-index:5}
 body.fs .controls{position:fixed;left:0;right:0;bottom:0;z-index:6;background:rgba(10,14,16,.72);color:#e7ecee;
@@ -61,6 +69,7 @@ body.fs .controls{position:fixed;left:0;right:0;bottom:0;z-index:6;background:rg
 body.fs .controls label{color:#cfd8dc}
 body.fs .controls .legend{display:none}
 body.fs .fsonly{display:block;color:#e7ecee;border-color:#53616a;padding:10px 14px;min-height:40px}
+body.fs .hud{font-size:14px;top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left))}
 </style>
 </head>
 <body>
@@ -83,21 +92,47 @@ body.fs .fsonly{display:block;color:#e7ecee;border-color:#53616a;padding:10px 14
   </div>
 
   <div class="controls" id="controls">
-    <div class="ctl">
-      <label for="farpos">Far end of the alley: drag so the orange box sits on it</label>
-      <input id="farpos" type="range" min="10" max="90" value="45">
+    <div class="bar">
+      <button id="togglesettings" class="secondary fsonly">Settings</button>
+      <button id="exitfs" class="secondary fsonly">Exit full screen</button>
     </div>
-    <div class="ctl">
-      <label for="slow">Gap between beeps when far: <b id="slowv">1.20 s</b></label>
-      <input id="slow" type="range" min="0.3" max="3" step="0.05" value="1.2">
+    <div class="settings hide" id="settings">
+      <div class="ctl">
+        <label for="startd">Start beeping from: <b id="startdv"></b></label>
+        <input id="startd" type="range" min="5" max="60" step="1" value="45" data-unit=" m">
+      </div>
+      <div class="ctl">
+        <label for="neard">Fastest beeping at: <b id="neardv"></b></label>
+        <input id="neard" type="range" min="0.5" max="10" step="0.5" value="2" data-unit=" m">
+      </div>
+      <div class="ctl">
+        <label for="slow">Gap between beeps when far: <b id="slowv"></b></label>
+        <input id="slow" type="range" min="0.3" max="3" step="0.05" value="1.2" data-unit=" s">
+      </div>
+      <div class="ctl">
+        <label for="fast">Gap between beeps when close: <b id="fastv"></b></label>
+        <input id="fast" type="range" min="0.05" max="0.6" step="0.01" value="0.12" data-unit=" s">
+      </div>
+      <div class="ctl">
+        <label for="farpos">Far zoom position: drag the orange box onto the far end</label>
+        <input id="farpos" type="range" min="10" max="90" value="45">
+      </div>
+      <div class="ctl">
+        <label for="zoom">Far zoom strength: <b id="zoomv"></b></label>
+        <input id="zoom" type="range" min="1.5" max="5" step="0.5" value="3" data-unit="×">
+      </div>
+      <div class="ctl"><label><input id="usecrop" type="checkbox" checked> Use far zoom</label></div>
+      <div class="ctl"><label><input id="usemotion" type="checkbox" checked> Beep for movement in the far zoom too, when no person is found</label></div>
+      <div class="ctl calib">
+        <label for="calibd">Calibrate distance: one person stands at a measured distance</label>
+        <div class="row">
+          <input id="calibd" type="number" min="1" max="60" step="0.5" value="10" inputmode="decimal"> <span>m</span>
+          <button id="calib" class="secondary">They're standing there now</button>
+        </div>
+        <span class="note" id="calibnote">Not calibrated yet: distances are a rough guess.</span>
+      </div>
+      <div class="legend"><span><i style="background:var(--box)"></i>person + distance</span><span><i style="background:var(--crop)"></i>far zoom area</span><span><i style="background:#ff4fd8"></i>movement only</span></div>
     </div>
-    <div class="ctl">
-      <label for="fast">Gap between beeps when close: <b id="fastv">0.12 s</b></label>
-      <input id="fast" type="range" min="0.05" max="0.6" step="0.01" value="0.12">
-    </div>
-    <div class="ctl"><label><input id="usecrop" type="checkbox"> Far zoom in beep test (sees further, reacts slower)</label></div>
-    <div class="legend"><span><i style="background:var(--box)"></i>person found</span><span><i style="background:var(--crop)"></i>far-end zoom area</span></div>
-    <button id="exitfs" class="secondary fsonly">Exit full screen</button>
   </div>
 
   <section class="panel">
@@ -157,7 +192,8 @@ const nextFrame = () => new Promise(res =>
 
 function cropRect() {
   const vw = video.videoWidth, vh = video.videoHeight;
-  const sw = Math.round(vw * 0.34), sh = Math.round(vh * 0.34);
+  const frac = 1 / (+$("zoom").value || 3);
+  const sw = Math.round(vw * frac), sh = Math.round(vh * frac);
   const cy = vh * (+$("farpos").value / 100);
   const sy = Math.max(0, Math.min(vh - sh, Math.round(cy - sh / 2)));
   return { sx: Math.round((vw - sw) / 2), sy, sw, sh };
@@ -183,6 +219,43 @@ async function detectOnce(det, useCrop) {
     }
   }
   return boxes;
+}
+
+const toBox = (d, ox = 0, oy = 0, far = false) => ({
+  x: d.boundingBox.originX + ox, y: d.boundingBox.originY + oy,
+  w: d.boundingBox.width, h: d.boundingBox.height, s: d.categories[0].score, far });
+function detectWhole(det) { return det.detect(video).detections.map(d => toBox(d)); }
+function detectCrop(det) {
+  const r = cropRect();
+  if (crop.width !== r.sw || crop.height !== r.sh) { crop.width = r.sw; crop.height = r.sh; }
+  cctx.drawImage(video, r.sx, r.sy, r.sw, r.sh, 0, 0, r.sw, r.sh);
+  return det.detect(crop).detections.map(d => toBox(d, r.sx, r.sy, true));
+}
+
+// ---- Distance in metres ----
+// A person's height in the image shrinks in proportion to distance:
+//   distance = K / box height (px).  K = assumed person height × camera focal length (px).
+// Default K is a guess for a typical phone main camera (≈42° tall view in landscape)
+// and a 1.65 m person. "Calibrate" replaces it with a measured value.
+const PERSON_M = 1.65;
+function defaultK() {
+  const vh = Math.min(video.videoWidth, video.videoHeight) || 1080;
+  const vfov = (video.videoWidth >= video.videoHeight ? 42 : 66) * Math.PI / 180;
+  return PERSON_M * (vh / 2) / Math.tan(vfov / 2);
+}
+let K = null, Kfromheight = null;
+try { const s = JSON.parse(localStorage.getItem("ibs-calib") || "null"); if (s) { K = s.K; Kfromheight = s.h; } } catch {}
+function kNow() {
+  if (!K) return defaultK();
+  // Calibration was taken at one frame height; scale if the camera size changed.
+  return K * ((Math.min(video.videoWidth, video.videoHeight) || Kfromheight) / Kfromheight);
+}
+function distanceOf(b) {
+  const vh = video.videoHeight;
+  let d = kNow() / Math.max(1, b.h);
+  // Feet cut off by the bottom edge: the box is too short, so the person is closer than it looks.
+  if (b.y + b.h > vh - 3) d = Math.min(d, +$("neard").value);
+  return d;
 }
 
 function draw(boxes, useCrop, label) {
@@ -260,10 +333,36 @@ $("exitfs").addEventListener("click", () => {
   document.body.classList.remove("fs");
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 });
-for (const id of ["slow", "fast"]) {
-  const upd = () => $(id + "v").textContent = (+$(id).value).toFixed(2) + " s";
-  $(id).addEventListener("input", upd); upd();
+// Settings: show values next to sliders and remember them on this phone.
+for (const el of document.querySelectorAll("#settings input")) {
+  const key = "ibs-set-" + el.id;
+  try { const v = localStorage.getItem(key); if (v !== null) el.type === "checkbox" ? (el.checked = v === "1") : (el.value = v); } catch {}
+  const out = $(el.id + "v");
+  const upd = () => {
+    if (out) out.textContent = (+el.value).toFixed(el.step && +el.step < 0.1 ? 2 : (+el.step < 1 ? 1 : 0)) + (el.dataset.unit || "");
+    try { localStorage.setItem(key, el.type === "checkbox" ? (el.checked ? "1" : "0") : el.value); } catch {}
+  };
+  el.addEventListener("input", upd); el.addEventListener("change", upd); upd();
 }
+$("togglesettings").addEventListener("click", () => $("settings").classList.toggle("hide"));
+function showCalib() {
+  $("calibnote").textContent = K ? "Calibrated. Distances are measured from your setup." : "Not calibrated yet: distances are a rough guess.";
+}
+showCalib();
+let latestBoxes = [];
+$("calib").addEventListener("click", () => {
+  const people = latestBoxes.filter(b => b.y + b.h < video.videoHeight - 3);
+  if (people.length !== 1) {
+    $("calibnote").textContent = people.length ? "More than one person in view. Only one should be visible." : "No full person in view yet (feet must be visible). Try again.";
+    return;
+  }
+  const d = +$("calibd").value;
+  const recent = heightBuf.filter(e => performance.now() - e.t < 1500).map(e => e.h).sort((a, b) => a - b);
+  const h = recent.length ? recent[Math.floor(recent.length / 2)] : people[0].h;
+  K = h * d; Kfromheight = Math.min(video.videoWidth, video.videoHeight);
+  try { localStorage.setItem("ibs-calib", JSON.stringify({ K, h: Kfromheight })); } catch {}
+  $("calibnote").textContent = `Calibrated at ${d} m. Distances are measured from your setup.`;
+});
 
 async function run(liveOnly) {
   $("start").disabled = true; $("liveonly").disabled = true;
@@ -346,38 +445,144 @@ async function run(liveOnly) {
   return live(d0);
 }
 
-// Beep test: beeps keep going while someone is in view. The closer they are,
-// the shorter the gap between beeps. The beep itself (pitch, length) never changes.
-const GRACE_MS = 600; // keep beeping through brief detection gaps
+// ---- Beep test ----
+// Beeps keep going while someone is in view, from the "start beeping" distance inwards.
+// The closer they are, the shorter the gap between beeps. Pitch and length never change.
+// Beeps are scheduled on the sound card's own clock, so the rhythm stays even while
+// the phone is busy looking for people.
+const GRACE_MS = 1500;      // keep beeping through detection gaps (far people flicker)
+const CROP_KEEP_MS = 700;   // a far-zoom result stays valid for this long
+const LOOKAHEAD = 0.25;     // seconds of beeps booked ahead
+const heightBuf = [];
+const bands = new Map();    // 5 m band -> number of detections
+let farthest = 0, farthestMotion = false;
+
+function scheduleBeep(when) {
+  const s = audio.createBufferSource(); s.buffer = clickBuf; s.connect(audio.destination); s.start(when);
+  return s;
+}
+
+function motionCheck(prevRef) {
+  sctx.drawImage(video, 0, 0, 160, 90);
+  const px = sctx.getImageData(0, 0, 160, 90).data;
+  const g = new Uint8Array(160 * 90);
+  for (let i = 0, j = 0; i < px.length; i += 4, j++) g[j] = (px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8;
+  const prev = prevRef.g; prevRef.g = g;
+  if (!prev) return null;
+  // Changed pixels inside the far zoom area only; also the lowest changed row (≈ feet).
+  const r = cropRect(), sx = 160 / video.videoWidth, sy = 90 / video.videoHeight;
+  const x0 = Math.floor(r.sx * sx), x1 = Math.ceil((r.sx + r.sw) * sx), y0 = Math.floor(r.sy * sy), y1 = Math.ceil((r.sy + r.sh) * sy);
+  let n = 0, minx = 1e9, maxx = -1, miny = 1e9, maxy = -1;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const k = y * 160 + x;
+    if (Math.abs(g[k] - prev[k]) > 22) { n++; if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y; }
+  }
+  const area = (x1 - x0) * (y1 - y0);
+  // Ignore tiny flicker and whole-image changes (camera shake, light change).
+  if (n < 6 || n > area * 0.5) return null;
+  return { x: minx / sx, y: miny / sy, w: (maxx - minx + 1) / sx, h: (maxy - miny + 1) / sy };
+}
+
+function bandLog() {
+  const keys = [...bands.keys()].sort((a, b) => a - b);
+  return keys.map(k => `  ${k}–${k + 5} m: ${bands.get(k)}`).join("\n");
+}
+function updateLiveResults(rate) {
+  const head = R.lines.filter(l => !l.startsWith("§"));
+  resultsEl.textContent = [...head,
+    "",
+    `Beep test · ${f1(rate)} looks/s · ${K ? "calibrated" : "NOT calibrated (rough distances)"}`,
+    `Farthest person seen: ${farthest ? f1(farthest) + " m" : "none yet"}`,
+    `Person sightings by distance:`,
+    bandLog() || "  none yet",
+    `Settings: beep from ${$("startd").value} m · fastest at ${$("neard").value} m · gaps ${$("slow").value}–${$("fast").value} s · zoom ${$("usecrop").checked ? $("zoom").value + "×" : "off"} · movement ${$("usemotion").checked ? "on" : "off"}`,
+  ].join("\n");
+}
+
 async function live(d0) {
   if (!d0) return;
-  step("live", "run", "beeps while someone is in view · faster as they come closer");
-  let prox = 0, lastSeen = -1e9, lastBeep = 0, n = 0, tw = performance.now(), rate = 0;
-  const gapNow = () => {
-    const slow = +$("slow").value, fast = +$("fast").value;
-    return (slow - (slow - fast) * Math.pow(prox, 2.2)) * 1000;
+  step("live", "run", "beeps from far away, faster as people come closer · distances shown in metres");
+  $("copy").disabled = false;
+  let dist = null, lastSeen = -1e9, nextBeep = 0, scheduled = [], beeping = false, source = "";
+  let cropBoxes = [], cropAt = -1e9, turn = 0, n = 0, tw = performance.now(), rate = 0;
+  const motionRef = {}; let motionBox = null, motionAt = -1e9;
+
+  const gapFor = d => {
+    const slow = +$("slow").value, fast = +$("fast").value, start = +$("startd").value, near = +$("neard").value;
+    const t = Math.min(1, Math.max(0, (start - d) / Math.max(0.5, start - near)));
+    return slow - (slow - fast) * Math.pow(t, 1.6);
   };
-  setInterval(() => {
-    const now = performance.now();
-    if (now - lastSeen > GRACE_MS) return;
-    if (now - lastBeep >= gapNow()) { blip(); lastBeep = now; }
-  }, 10);
+  const pump = () => {
+    const now = performance.now(), t = audio.currentTime;
+    const on = dist !== null && now - lastSeen <= GRACE_MS && dist <= +$("startd").value;
+    if (!on) {
+      if (beeping) { for (const s of scheduled) if (s.when > t + 0.01) try { s.src.stop(); } catch {} }
+      beeping = false; scheduled = []; return;
+    }
+    if (!beeping) { beeping = true; nextBeep = t + 0.005; }   // first beep right away
+    if (nextBeep < t) nextBeep = t + 0.005;
+    while (nextBeep < t + LOOKAHEAD) {
+      scheduled.push({ src: scheduleBeep(nextBeep), when: nextBeep });
+      nextBeep += gapFor(dist);
+    }
+    scheduled = scheduled.filter(s => s.when > t - 0.1);
+  };
+  setInterval(pump, 15);
+
   for (;;) {
     await nextFrame();
-    const useCrop = $("usecrop").checked;
-    const boxes = await detectOnce(d0, useCrop);
+    const useCrop = $("usecrop").checked, useMotion = $("usemotion").checked;
+    // Alternate whole view and far zoom so each look stays short.
+    let wholeBoxes = latestWhole;
+    if (useCrop && turn++ % 2 === 1) { cropBoxes = detectCrop(d0); cropAt = performance.now(); }
+    else { wholeBoxes = latestWhole = detectWhole(d0); }
+    const mv = useMotion && useCrop ? motionCheck(motionRef) : null;
     const now = performance.now();
+    if (mv) { motionBox = mv; motionAt = now; }
+
+    const boxes = [...wholeBoxes];
+    if (useCrop && now - cropAt < CROP_KEEP_MS) for (const b of cropBoxes) if (!boxes.some(o => iou(o, b) > 0.3)) boxes.push(b);
+    latestBoxes = boxes;
+    for (const b of boxes) b.d = distanceOf(b);
+    const full = boxes.filter(b => b.y + b.h < video.videoHeight - 3);
+    if (full.length === 1) { heightBuf.push({ t: now, h: full[0].h }); if (heightBuf.length > 40) heightBuf.shift(); }
+
+    let target = null;
     if (boxes.length) {
+      target = Math.min(...boxes.map(b => b.d)); source = "person";
+      for (const b of boxes) { const k = Math.floor(b.d / 5) * 5; bands.set(k, (bands.get(k) || 0) + 1); farthest = Math.max(farthest, b.d); }
+    } else if (useMotion && motionBox && now - motionAt < 500) {
+      // Movement at the far end but no person found: treat it as someone at the far edge.
+      target = +$("startd").value; source = "movement";
+    }
+    if (target !== null) {
+      dist = dist === null || now - lastSeen > GRACE_MS ? target : dist * 0.5 + target * 0.5;
       lastSeen = now;
-      // Same closeness measure as the laptop prototype: tallest person vs. frame height.
-      const raw = Math.min(Math.max(...boxes.map(b => b.h)) / (video.videoHeight * 0.65), 1);
-      prox = 0.65 * prox + 0.35 * raw;
-    } else if (now - lastSeen > GRACE_MS) prox = 0;
+    }
+    pump();
+
     n++;
-    if (now - tw > 2000) { rate = n / ((now - tw) / 1000); tw = now; n = 0; }
-    const beeping = now - lastSeen <= GRACE_MS;
-    draw(boxes, useCrop, `${f1(rate)}/s · closeness ${f0(prox * 100)}% · ${beeping ? "gap " + (gapNow() / 1000).toFixed(2) + " s" : "silent"}`);
+    if (now - tw > 2000) { rate = n / ((now - tw) / 1000); tw = now; n = 0; updateLiveResults(rate); }
+    const active = dist !== null && now - lastSeen <= GRACE_MS && dist <= +$("startd").value;
+    drawLive(boxes, useCrop, motionBox && now - motionAt < 500 ? motionBox : null,
+      `${f1(rate)}/s · ${active ? `${f1(dist)} m (${source}) · gap ${gapFor(dist).toFixed(2)} s` : "silent"} · farthest ${f1(farthest)} m${K ? "" : " · not calibrated"}`);
   }
+}
+let latestWhole = [];
+
+function drawLive(boxes, useCrop, motionBox, label) {
+  draw(boxes, useCrop, label);
+  const lw = Math.max(2, video.videoWidth / 400), fs = Math.max(16, video.videoWidth / 55);
+  octx.font = `600 ${fs}px ui-monospace, monospace`; octx.textBaseline = "bottom";
+  for (const b of boxes) {
+    const t = `${f1(b.d)} m`, tw = octx.measureText(t).width;
+    octx.fillStyle = "rgba(0,0,0,.65)"; octx.fillRect(b.x, b.y - fs - 6, tw + 10, fs + 6);
+    octx.fillStyle = "#19c37d"; octx.fillText(t, b.x + 5, b.y - 3);
+  }
+  if (motionBox && !boxes.length) {
+    octx.lineWidth = lw; octx.strokeStyle = "#ff4fd8"; octx.strokeRect(motionBox.x, motionBox.y, motionBox.w, motionBox.h);
+  }
+  hud.textContent = label;
 }
 
 $("liveonly").addEventListener("click", () => run(true).catch(e => { log("Unexpected error: " + (e.message || e)); $("copy").disabled = false; }));
