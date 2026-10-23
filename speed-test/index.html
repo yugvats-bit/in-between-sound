@@ -51,6 +51,16 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
 .note{font-size:13px;color:var(--muted)}
 .legend{display:flex;gap:14px;font:12px var(--mono);color:var(--muted);flex-wrap:wrap}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.controls{display:grid;gap:10px}
+.fsonly{display:none}
+/* Full-screen landscape: camera fills the screen, controls float along the bottom. */
+body.fs .stage{position:fixed;inset:0;border-radius:0;aspect-ratio:auto;z-index:5}
+body.fs .controls{position:fixed;left:0;right:0;bottom:0;z-index:6;background:rgba(10,14,16,.72);color:#e7ecee;
+  grid-template-columns:repeat(auto-fit,minmax(200px,1fr));align-items:end;
+  padding:10px max(16px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+body.fs .controls label{color:#cfd8dc}
+body.fs .controls .legend{display:none}
+body.fs .fsonly{display:block;color:#e7ecee;border-color:#53616a;padding:10px 14px;min-height:40px}
 </style>
 </head>
 <body>
@@ -61,7 +71,8 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
   </header>
 
   <div class="row">
-    <button id="start">Start test</button>
+    <button id="start">Start full test</button>
+    <button id="liveonly" class="secondary">Beep test only</button>
     <button id="copy" class="secondary" disabled>Copy results</button>
   </div>
 
@@ -71,10 +82,22 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute
     <div class="hud" id="hud">not started</div>
   </div>
 
-  <div>
-    <label for="farpos">Far end of the alley: drag so the orange box sits on it</label>
-    <input id="farpos" type="range" min="10" max="90" value="38">
+  <div class="controls" id="controls">
+    <div class="ctl">
+      <label for="farpos">Far end of the alley: drag so the orange box sits on it</label>
+      <input id="farpos" type="range" min="10" max="90" value="45">
+    </div>
+    <div class="ctl">
+      <label for="slow">Gap between beeps when far: <b id="slowv">1.20 s</b></label>
+      <input id="slow" type="range" min="0.3" max="3" step="0.05" value="1.2">
+    </div>
+    <div class="ctl">
+      <label for="fast">Gap between beeps when close: <b id="fastv">0.12 s</b></label>
+      <input id="fast" type="range" min="0.05" max="0.6" step="0.01" value="0.12">
+    </div>
+    <div class="ctl"><label><input id="usecrop" type="checkbox"> Far zoom in beep test (sees further, reacts slower)</label></div>
     <div class="legend"><span><i style="background:var(--box)"></i>person found</span><span><i style="background:var(--crop)"></i>far-end zoom area</span></div>
+    <button id="exitfs" class="secondary fsonly">Exit full screen</button>
   </div>
 
   <section class="panel">
@@ -167,9 +190,11 @@ function draw(boxes, useCrop, label) {
   if (overlay.width !== vw || overlay.height !== vh) { overlay.width = vw; overlay.height = vh; }
   octx.clearRect(0, 0, vw, vh);
   const lw = Math.max(2, vw / 400);
-  const r = cropRect();
-  octx.setLineDash([lw * 4, lw * 3]); octx.lineWidth = lw; octx.strokeStyle = "#ffb020";
-  octx.strokeRect(r.sx, r.sy, r.sw, r.sh); octx.setLineDash([]);
+  if (useCrop) {
+    const r = cropRect();
+    octx.setLineDash([lw * 4, lw * 3]); octx.lineWidth = lw; octx.strokeStyle = "#ffb020";
+    octx.strokeRect(r.sx, r.sy, r.sw, r.sh); octx.setLineDash([]);
+  }
   octx.lineWidth = lw * 1.5; octx.strokeStyle = "#19c37d";
   for (const b of boxes) octx.strokeRect(b.x, b.y, b.w, b.h);
   hud.textContent = `${label} · people: ${boxes.length}`;
@@ -223,8 +248,29 @@ function blip() {
   const s = audio.createBufferSource(); s.buffer = clickBuf; s.connect(audio.destination); s.start();
 }
 
-async function run() {
-  $("start").disabled = true;
+function enterFs() {
+  document.body.classList.add("fs");
+  try {
+    const p = document.documentElement.requestFullscreen?.({ navigationUI: "hide" });
+    return Promise.resolve(p).then(() => screen.orientation?.lock?.("landscape")).catch(() => {});
+  } catch { return Promise.resolve(); }
+}
+document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) document.body.classList.remove("fs"); });
+$("exitfs").addEventListener("click", () => {
+  document.body.classList.remove("fs");
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+});
+for (const id of ["slow", "fast"]) {
+  const upd = () => $(id + "v").textContent = (+$(id).value).toFixed(2) + " s";
+  $(id).addEventListener("input", upd); upd();
+}
+
+async function run(liveOnly) {
+  $("start").disabled = true; $("liveonly").disabled = true;
+  // Both must start inside the tap: full screen and sound.
+  const fsReady = enterFs();
+  try { audio = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" }); audio.resume(); } catch {}
+  await fsReady;
   R.lines = [`Alley speed test · ${new Date().toLocaleString()}`,
     `Device: ${navigator.userAgent.match(/\(([^)]+)\)/)?.[1] || navigator.userAgent}`,
     `Cores: ${navigator.hardwareConcurrency || "?"} · memory: ${navigator.deviceMemory ? navigator.deviceMemory + " GB" : "?"}`];
@@ -235,7 +281,7 @@ async function run() {
   // Sound first, inside the tap.
   step("audio", "run");
   try {
-    audio = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
     await audio.resume();
     clickBuf = audio.createBuffer(1, Math.round(audio.sampleRate * 0.04), audio.sampleRate);
     const ch = clickBuf.getChannelData(0);
@@ -269,6 +315,10 @@ async function run() {
   }
 
   const d0 = await loadModel("load0", "lite0", "Small model");
+  if (liveOnly) {
+    for (const id of ["b0full", "b0crop", "load2", "b2full", "b2crop", "motion"]) step(id, "wait", "skipped");
+    return live(d0);
+  }
   if (d0) { await bench("b0full", d0, false, "Small · whole view"); await bench("b0crop", d0, true, "Small · whole + far zoom"); }
   const d2 = await loadModel("load2", "lite2", "Bigger model");
   if (d2) { await bench("b2full", d2, false, "Bigger · whole view"); await bench("b2crop", d2, true, "Bigger · whole + far zoom"); d2.close(); }
@@ -293,23 +343,45 @@ async function run() {
   log(`Most people seen at once: ${maxPeople}`);
   $("copy").disabled = false;
 
-  // Live mode: keep detecting with the small model + far zoom, click when someone appears.
+  return live(d0);
+}
+
+// Beep test: beeps keep going while someone is in view. The closer they are,
+// the shorter the gap between beeps. The beep itself (pitch, length) never changes.
+const GRACE_MS = 600; // keep beeping through brief detection gaps
+async function live(d0) {
   if (!d0) return;
-  step("live", "run", "click plays when someone appears · move the orange box onto the far end");
-  let had = 0, n = 0, tw = performance.now();
+  step("live", "run", "beeps while someone is in view · faster as they come closer");
+  let prox = 0, lastSeen = -1e9, lastBeep = 0, n = 0, tw = performance.now(), rate = 0;
+  const gapNow = () => {
+    const slow = +$("slow").value, fast = +$("fast").value;
+    return (slow - (slow - fast) * Math.pow(prox, 2.2)) * 1000;
+  };
+  setInterval(() => {
+    const now = performance.now();
+    if (now - lastSeen > GRACE_MS) return;
+    if (now - lastBeep >= gapNow()) { blip(); lastBeep = now; }
+  }, 10);
   for (;;) {
     await nextFrame();
-    const boxes = await detectOnce(d0, true);
-    n++;
-    if (boxes.length > 0 && had === 0) blip();
-    had = boxes.length;
+    const useCrop = $("usecrop").checked;
+    const boxes = await detectOnce(d0, useCrop);
     const now = performance.now();
-    draw(boxes, true, `live ${f1(n / ((now - tw) / 1000))}/s`);
-    if (now - tw > 3000) { tw = now; n = 0; }
+    if (boxes.length) {
+      lastSeen = now;
+      // Same closeness measure as the laptop prototype: tallest person vs. frame height.
+      const raw = Math.min(Math.max(...boxes.map(b => b.h)) / (video.videoHeight * 0.65), 1);
+      prox = 0.65 * prox + 0.35 * raw;
+    } else if (now - lastSeen > GRACE_MS) prox = 0;
+    n++;
+    if (now - tw > 2000) { rate = n / ((now - tw) / 1000); tw = now; n = 0; }
+    const beeping = now - lastSeen <= GRACE_MS;
+    draw(boxes, useCrop, `${f1(rate)}/s · closeness ${f0(prox * 100)}% · ${beeping ? "gap " + (gapNow() / 1000).toFixed(2) + " s" : "silent"}`);
   }
 }
 
-$("start").addEventListener("click", () => run().catch(e => { log("Unexpected error: " + (e.message || e)); $("copy").disabled = false; }));
+$("liveonly").addEventListener("click", () => run(true).catch(e => { log("Unexpected error: " + (e.message || e)); $("copy").disabled = false; }));
+$("start").addEventListener("click", () => run(false).catch(e => { log("Unexpected error: " + (e.message || e)); $("copy").disabled = false; }));
 $("copy").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(resultsEl.textContent); $("copy").textContent = "Copied"; }
   catch { const r = document.createRange(); r.selectNodeContents(resultsEl); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $("copy").textContent = "Selected: copy it"; }
