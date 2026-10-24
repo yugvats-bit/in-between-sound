@@ -166,7 +166,7 @@ pre{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0;max-height:260px;ove
       <section class="panel">
         <h2>Detection</h2>
         <div class="grid">
-          <label class="row" style="gap:6px"><input type="checkbox" id="usemotion"> Beep for any shape that isn't the empty alley (catches far people)</label>
+          <label class="row" style="gap:6px"><input type="checkbox" id="shapebeep"> Also beep for shapes the model hasn't confirmed as people (catches more far people, but causes false beeps)</label>
           <label class="row" style="gap:6px"><input type="checkbox" id="autozoom"> Zoom in on far shapes to check they're people</label>
           <div><label for="msens">Shape sensitivity: <b id="msensv"></b></label><input id="msens" type="range" min="1" max="10" step="1" data-unit=""><p class="note">Raise if far people are missed. Lower if shadows, leaves or lights set it off.</p></div>
         </div>
@@ -177,11 +177,11 @@ pre{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0;max-height:260px;ove
 </div>
 
 <script type="module">
-import { DEFAULTS, cloudOn, currentUser, signIn, load, save, onChange, live as liveLink, addFile, removeFile, KINDS } from "../common/store.js";
+import { DEFAULTS, cloudOn, currentUser, signIn, load, save, onChange, live as liveLink, addFile, removeFile, KINDS, net } from "../common/store.js";
 const $ = id => document.getElementById(id);
 let S = { ...DEFAULTS }, P = null, F = null, live = null;
 const SLIDERS = ["slow", "fast", "curve", "volume", "rate", "pitch", "closeat", "closesecs", "groupsecs", "msens"];
-const CHECKS = ["geiger", "usemotion", "autozoom"];
+const CHECKS = ["geiger", "shapebeep", "autozoom"];
 const TEXTS = ["closelines", "grouplines"];
 
 function fmt(el) {
@@ -259,13 +259,13 @@ $("resetall").onclick = () => { const keep = { closelines: S.closelines, groupli
 // Live link with the phone.
 let lastPhone = 0;
 function wireLive() {
-  live = liveLink(); if (!live) return;
+  live = liveLink("studio"); if (!live) return;
   live.on("status", p => {
     lastPhone = Date.now(); $("status").textContent = p.status;
     $("meter").style.width = (p.present ? Math.round(p.close * 100) : 0) + "%";
   });
   live.on("snap", p => {
-    lastPhone = Date.now();
+    lastPhone = Date.now(); if (!$("watch").checked) return;
     let img = $("view").querySelector("img");
     if (!img) { $("view").innerHTML = ""; img = document.createElement("img"); img.alt = "Phone camera"; $("view").append(img); }
     img.src = p.img;
@@ -276,7 +276,6 @@ function wireLive() {
     const ago = (Date.now() - lastPhone) / 1000;
     $("phonepill").textContent = lastPhone ? (ago < 3 ? "phone: live" : `phone: last seen ${Math.round(ago)} s ago`) : "phone: not seen";
     $("phonepill").className = "pill " + (lastPhone && ago < 3 ? "on" : "");
-    if ($("watch").checked) live.send("watch", {});
   }, 2000);
   $("cmdbeep").onclick = () => live.send("beep", {});
   $("cmdrelearn").onclick = () => live.send("relearn", {});
@@ -300,6 +299,7 @@ async function boot() {
       if (id === "files") { F = data; renderFiles(); }
     });
     wireLive();
+    setInterval(() => { if (net.error) { $("conn").textContent = "problem: " + net.error; $("conn").className = "pill bad"; } else { $("conn").textContent = "online"; $("conn").className = "pill on"; } }, 2000);
   } else {
     for (const id of ["cmdbeep", "cmdrelearn", "playclose", "playgroup"]) $(id).disabled = true;
   }

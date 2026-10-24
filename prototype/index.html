@@ -105,7 +105,7 @@ body.fs .hud{top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-in
 </main>
 
 <script type="module">
-import { DEFAULTS, cloudOn, currentUser, signIn, load, save, onChange, live as liveLink, getBlob, KINDS } from "../common/store.js";
+import { DEFAULTS, cloudOn, currentUser, signIn, load, save, onChange, live as liveLink, getBlob, KINDS, net } from "../common/store.js";
 
 const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 const MODEL = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite";
@@ -136,7 +136,8 @@ async function boot() {
     await loadAll();
     if (cloudOn) {
       setConn("Connected to studio", "on");
-      live = liveLink();
+      setInterval(() => net.error ? setConn("Studio problem: " + net.error, "bad") : setConn("Connected to studio", "on"), 2000);
+      live = liveLink("phone");
       onChange(async (id, data) => {
         if (id === "settings") { S = data; applyQuick(); if (master) master.gain.value = S.volume; note("Settings updated from studio."); }
         if (id === "files") {
@@ -351,6 +352,9 @@ $("exitfs").onclick = () => { document.body.classList.remove("fs"); if (document
 
 // ---------------- Main ----------------
 const GRACE = 1500, EMPTY_RESET = 1000, LOOK = 0.25;
+const WHOLE_SCORE = 0.45, ZOOM_SCORE = 0.4;   // how sure the model must be that it's a person
+const TRACK_MS = 1200, FOLLOW_MAX_MS = 15000; // follow a lost person's shape; give up after 15 s unconfirmed
+let tracks = [];
 let effects = [], geigerLoop = null, geigerGain = null, watchedAt = -1e9;
 function silenceEffects() {
   const t = audio ? audio.currentTime : 0;
@@ -432,30 +436,45 @@ async function loop(det) {
     const people0 = [...wholeBoxes, ...(now0 - zoomAt < 900 ? zoomBoxes : [])];
     const unconfirmed = blobs.filter(b => !overlapsAny(b, people0));
 
-    // Look: alternate the whole view with a zoom on the biggest unexplained shape.
-    if (S.autozoom && unconfirmed.length && turn++ % 2 === 1) {
-      const b = unconfirmed[0];
+    // Look: alternate the whole view with a zoom on the biggest unexplained upright shape.
+    const candidates = unconfirmed.filter(b => b.h >= b.w * 0.9 && b.h < vh * 0.7);
+    if (S.autozoom && candidates.length && turn++ % 2 === 1) {
+      const b = candidates[0];
       const side = Math.min(vh, Math.max(256, b.h * 2.6));
       const sx = Math.max(0, Math.min(vw - side, b.x + b.w / 2 - side / 2)), sy = Math.max(0, Math.min(vh - side, b.y + b.h / 2 - side / 2));
       const cs = Math.min(side, 512), k = side / cs;
       if (crop.width !== cs) { crop.width = cs; crop.height = cs; }
       cctx.drawImage(video, sx, sy, side, side, 0, 0, cs, cs);
-      zoomBoxes = det.detect(crop).detections.map(d => toBox(d, sx, sy, k)); zoomAt = performance.now(); zoomRect = { x: sx, y: sy, w: side, h: side };
-    } else wholeBoxes = det.detect(video).detections.map(d => toBox(d));
+      zoomBoxes = det.detect(crop).detections.filter(d => d.categories[0].score >= ZOOM_SCORE).map(d => toBox(d, sx, sy, k));
+      zoomAt = performance.now(); zoomRect = { x: sx, y: sy, w: side, h: side };
+    } else wholeBoxes = det.detect(video).detections.filter(d => d.categories[0].score >= WHOLE_SCORE).map(d => toBox(d));
     const now = performance.now();
 
     const boxes = [...wholeBoxes];
     if (now - zoomAt < 900) for (const b of zoomBoxes) if (!boxes.some(o => iou(o, b) > 0.3)) boxes.push(b);
+
+    // Follow a confirmed person through brief misses: if the model loses them but a shape
+    // is still where they were (e.g. walking straight at the camera), keep them.
+    if (boxes.length) { tracks = boxes.map(b => ({ x: b.x, y: b.y, w: b.w, h: b.h, t: now, confirmed: now })); }
+    else {
+      // Drop tracks not matched for a while, or followed too long without the model confirming them.
+      tracks = tracks.filter(tr => now - tr.t < TRACK_MS && now - tr.confirmed < FOLLOW_MAX_MS);
+      for (const tr of tracks) {
+        const s = blobs.find(b => overlapsAny(b, [tr]) || overlapsAny(tr, [b]));
+        if (s) { tr.x = s.x; tr.y = s.y; tr.w = s.w; tr.h = s.h; tr.t = now; boxes.push({ x: s.x, y: s.y, w: s.w, h: s.h, tracked: true }); }
+      }
+    }
     for (const b of boxes) b.c = closenessOf(b);
-    const shapesOnly = S.usemotion ? blobs.filter(b => !overlapsAny(b, boxes)) : [];
+    // Unconfirmed shapes only beep if switched on in the studio (off by default: too many false beeps).
+    const shapesOnly = S.shapebeep ? blobs.filter(b => !overlapsAny(b, boxes) && b.h >= b.w * 0.9) : [];
     for (const b of shapesOnly) b.c = closenessOf(b);
 
     let target = null;
     if (boxes.length) {
-      target = Math.max(...boxes.map(b => b.c)); src = "person";
+      target = Math.max(...boxes.map(b => b.c)); src = boxes.some(b => !b.tracked) ? "person" : "person (followed)";
       const full = boxes.filter(b => b.y + b.h < vh - 3);
       if (full.length === 1) recent.push({ t: now, h: full[0].h / vh, src: "person" });
-    }
+    } else if (!S.shapebeep && candidates.length === 1) recent.push({ t: now, h: candidates[0].h / vh, src: "shape" });
     if (shapesOnly.length) {
       const m = Math.max(...shapesOnly.map(b => b.c));
       if (target === null || m > target) { target = m; src = "shape"; }
@@ -491,7 +510,7 @@ async function loop(det) {
       : `watching · ${rate.toFixed(1)} looks/s`;
     hud.textContent = status;
     if (live && now - lastStatus > 350) { lastStatus = now; live.send("status", { status, close, present, people, talking }); }
-    if (live && now - watchedAt < 8000 && now - lastSnap > 1200) {
+    if (live && now - lastSnap > 1500) {
       lastSnap = now;
       snx.drawImage(video, 0, 0, 384, 216); snx.drawImage(overlay, 0, 0, 384, 216);
       live.send("snap", { img: snap.toDataURL("image/jpeg", 0.55) });

@@ -8,7 +8,7 @@ export const DEFAULTS = {
   closesecs: 3, groupsecs: 5, closeat: 0.75,
   closelines: "I see you.\nYou are very close now.\nStanding still will not make you invisible.\nI have been watching this alley all day. You are the most interesting thing so far.\nPlease keep walking.",
   grouplines: "Two of you. Interesting.\nGathering here has been noted.\nI am counting all of you.\nYou can stay. I am not going anywhere either.",
-  geiger: true, usemotion: true, msens: 6, autozoom: true, volume: 1,
+  geiger: true, shapebeep: false, msens: 6, autozoom: true, volume: 1,
 };
 export const PHONE_DEFAULTS = { hFar: 0.05, hNear: 0.8, calibrated: false, voices: [] };
 export const KINDS = ["close", "group", "beep", "geiger"];
@@ -45,42 +45,78 @@ export async function load(id) {
   return { ...BASE[id], ...(v || {}) };
 }
 
-const timers = {};
+const timers = {}, savedAt = {};
+export const net = { error: "", lastOk: 0 };
+function ok() { net.error = ""; net.lastOk = Date.now(); }
+function fail(e) { net.error = e.message || String(e); }
 // Saves are grouped: rapid slider moves send one write after a short pause.
 export function save(id, value, delay = 400) {
-  local.set(id, value);
+  local.set(id, value); savedAt[id] = Date.now();
   if (!sb) return Promise.resolve();
   clearTimeout(timers[id]);
   return new Promise((res, rej) => {
     timers[id] = setTimeout(async () => {
+      savedAt[id] = Date.now();
       const { error } = await sb.from("studio").upsert({ id, data: value, updated_at: new Date().toISOString() });
-      if (error) rej(new Error(error.message)); else res();
+      if (error) { fail(error); rej(new Error(error.message)); } else { ok(); res(); }
     }, delay);
   });
 }
 
-// Calls back with (id, data) whenever the other device saves.
-export function onChange(cb) {
+// Checks every 2 s for changes saved by the other device and calls back with (id, data).
+// (Plain reads instead of a live socket: slower, but works on any network.)
+export function onChange(cb, ids = ["settings", "files", "phone"]) {
   if (!sb) return () => {};
-  const ch = sb.channel("studio-db")
-    .on("postgres_changes", { event: "*", schema: "public", table: "studio" }, p => {
-      if (p.new && p.new.id) { local.set(p.new.id, p.new.data); cb(p.new.id, { ...BASE[p.new.id], ...p.new.data }); }
-    }).subscribe();
-  return () => sb.removeChannel(ch);
+  const seen = {}; let first = true;
+  const tick = async () => {
+    const { data, error } = await sb.from("studio").select("id,data,updated_at").in("id", ids);
+    if (error) { fail(error); return; }
+    ok();
+    if (first) { first = false; for (const id of ids) seen[id] = null; for (const r of data || []) seen[r.id] = r.updated_at; return; }
+    for (const r of data || []) {
+      if (r.updated_at === seen[r.id]) continue;
+      seen[r.id] = r.updated_at;
+      if (Date.now() - (savedAt[r.id] || 0) < 3000) continue; // our own recent save coming back
+      local.set(r.id, r.data); cb(r.id, { ...BASE[r.id], ...r.data });
+    }
+  };
+  tick(); const h = setInterval(tick, 2000);
+  return () => clearInterval(h);
 }
 
-// ---- live link (status, commands, camera snapshots); nothing is stored ----
-let liveCh = null;
-const handlers = {};
-export function live() {
+// ---- live link between phone and studio, through two small rows ----
+// Each side writes its own row about once a second: the latest state (status, camera picture)
+// plus a short list of recent messages (log lines, commands). The other side reads it.
+export function live(role) {
   if (!sb) return null;
-  if (!liveCh) {
-    liveCh = sb.channel("studio-live", { config: { broadcast: { self: false } } });
-    liveCh.on("broadcast", { event: "*" }, msg => { (handlers[msg.event] || []).forEach(f => f(msg.payload)); });
-    liveCh.subscribe();
-  }
+  const mine = "live-" + role, theirs = "live-" + (role === "phone" ? "studio" : "phone");
+  const latest = {}, queue = [], handlers = {};
+  let dirty = false, counter = 0, lastSeq = null, lastT = null;
+  const flush = async () => {
+    if (!dirty) return; dirty = false;
+    const { error } = await sb.from("studio").upsert({ id: mine, data: { t: Date.now(), latest, queue: queue.slice(-30) }, updated_at: new Date().toISOString() });
+    if (error) { fail(error); dirty = true; } else ok();
+  };
+  const read = async () => {
+    const { data, error } = await sb.from("studio").select("data").eq("id", theirs).maybeSingle();
+    if (error) { fail(error); return; }
+    ok();
+    const d = data && data.data; if (!d) { if (lastSeq === null) lastSeq = 0; return; }
+    const q = d.queue || [];
+    if (lastSeq === null) lastSeq = q.length ? q[q.length - 1].seq : 0; // don't replay old commands
+    for (const m of q) if (m.seq > lastSeq) { lastSeq = m.seq; (handlers[m.event] || []).forEach(f => f(m.payload)); }
+    if (d.t !== lastT) { lastT = d.t; for (const [ev, p] of Object.entries(d.latest || {})) (handlers[ev] || []).forEach(f => f(p, d.t)); }
+  };
+  setInterval(flush, role === "phone" ? 1000 : 400);
+  setInterval(read, role === "phone" ? 700 : 1000);
   return {
-    send(event, payload) { liveCh.send({ type: "broadcast", event, payload }); },
+    // Latest-only events (status, snap) replace each other; others are queued in order.
+    send(event, payload) {
+      if (event === "status" || event === "snap") latest[event] = payload;
+      else queue.push({ seq: Date.now() * 100 + (counter++ % 100), event, payload });
+      if (queue.length > 60) queue.splice(0, queue.length - 60);
+      dirty = true;
+    },
     on(event, f) { (handlers[event] = handlers[event] || []).push(f); },
   };
 }
