@@ -5,12 +5,12 @@ import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 export const DEFAULTS = {
   slow: 1.5, fast: 0.08, curve: 1,
   rate: 0.95, pitch: 0.7, voice: "",
-  closesecs: 3, groupsecs: 5, closeat: 0.75,
+  closesecs: 2, groupsecs: 5, closeat: 0.75,
   closelines: "I see you.\nYou are very close now.\nStanding still will not make you invisible.\nI have been watching this alley all day. You are the most interesting thing so far.\nPlease keep walking.",
   grouplines: "Two of you. Interesting.\nGathering here has been noted.\nI am counting all of you.\nYou can stay. I am not going anywhere either.",
-  geiger: true, shapebeep: false, msens: 6, autozoom: true, volume: 1,
+  geiger: true, shapebeep: false, msens: 6, autozoom: true, volume: 1, minscore: 0.5, linegap: 2,
 };
-export const PHONE_DEFAULTS = { hFar: 0.05, hNear: 0.8, calibrated: false, voices: [] };
+export const PHONE_DEFAULTS = { hFar: 0.05, hNear: 0.8, calibrated: false, voices: [], ignore: [] };
 export const KINDS = ["close", "group", "beep", "geiger"];
 
 export const cloudOn = !!(SUPABASE_URL && SUPABASE_KEY && window.supabase);
@@ -80,7 +80,7 @@ export function onChange(cb, ids = ["settings", "files", "phone"]) {
       local.set(r.id, r.data); cb(r.id, { ...BASE[r.id], ...r.data });
     }
   };
-  tick(); const h = setInterval(tick, 2000);
+  tick(); const h = setInterval(tick, 1200);
   return () => clearInterval(h);
 }
 
@@ -90,34 +90,63 @@ export function onChange(cb, ids = ["settings", "files", "phone"]) {
 export function live(role) {
   if (!sb) return null;
   const mine = "live-" + role, theirs = "live-" + (role === "phone" ? "studio" : "phone");
-  const latest = {}, queue = [], handlers = {};
-  let dirty = false, counter = 0, lastSeq = null, lastT = null;
+  const latest = {}, queue = [], handlers = {}, done = new Set(), latestT = {};
+  let dirty = false, busy = false, counter = 0, lastSeq = null;
+  const fire = (event, payload, t) => (handlers[event] || []).forEach(f => f(payload, t));
+  const takeMsg = m => { if (done.has(m.seq)) return; done.add(m.seq); if (done.size > 500) done.delete(done.values().next().value); fire(m.event, m.payload); };
+  const takeLatest = (ev, p, t) => { if (t <= (latestT[ev] || 0)) return; latestT[ev] = t; fire(ev, p, t); };
+
+  // Fast path: a live socket, when the network allows it.
+  let sockOk = false;
+  let ch = null;
+  try {
+    ch = sb.channel("studio-live-v2", { config: { broadcast: { self: false } } });
+    ch.on("broadcast", { event: "m" }, ({ payload }) => {
+      if (!payload || payload.from === role) return;
+      if (payload.seq) { if (lastSeq === null || payload.seq > lastSeq) takeMsg(payload); }
+      else takeLatest(payload.event, payload.payload, payload.t);
+    }).subscribe(st => { sockOk = st === "SUBSCRIBED"; });
+  } catch { ch = null; }
+  const sendSock = payload => { if (sockOk && ch) try { ch.send({ type: "broadcast", event: "m", payload }); } catch {} };
+
+  // Reliable path: two rows in the table, written and read every half second.
   const flush = async () => {
-    if (!dirty) return; dirty = false;
-    const { error } = await sb.from("studio").upsert({ id: mine, data: { t: Date.now(), latest, queue: queue.slice(-30) }, updated_at: new Date().toISOString() });
+    if (!dirty || busy) return; dirty = false; busy = true;
+    const t = Date.now();
+    const { error } = await sb.from("studio").upsert({ id: mine, data: { t, latest, latestT: { ...latestOut }, queue: queue.slice(-30) }, updated_at: new Date().toISOString() });
+    busy = false;
     if (error) { fail(error); dirty = true; } else ok();
   };
+  const latestOut = {};
   const read = async () => {
     const { data, error } = await sb.from("studio").select("data").eq("id", theirs).maybeSingle();
     if (error) { fail(error); return; }
     ok();
     const d = data && data.data; if (!d) { if (lastSeq === null) lastSeq = 0; return; }
     const q = d.queue || [];
-    if (lastSeq === null) lastSeq = q.length ? q[q.length - 1].seq : 0; // don't replay old commands
-    for (const m of q) if (m.seq > lastSeq) { lastSeq = m.seq; (handlers[m.event] || []).forEach(f => f(m.payload)); }
-    if (d.t !== lastT) { lastT = d.t; for (const [ev, p] of Object.entries(d.latest || {})) (handlers[ev] || []).forEach(f => f(p, d.t)); }
+    if (lastSeq === null) { lastSeq = q.length ? q[q.length - 1].seq : 0; q.forEach(m => done.add(m.seq)); } // don't replay old commands
+    for (const m of q) if (m.seq > lastSeq) takeMsg(m);
+    lastSeq = Math.max(lastSeq, ...q.map(m => m.seq), 0);
+    for (const [ev, p] of Object.entries(d.latest || {})) takeLatest(ev, p, (d.latestT && d.latestT[ev]) || d.t);
   };
-  setInterval(flush, role === "phone" ? 1000 : 400);
-  setInterval(read, role === "phone" ? 700 : 1000);
+  setInterval(flush, 500);
+  setInterval(read, 500);
   return {
-    // Latest-only events (status, snap) replace each other; others are queued in order.
+    // status/snap replace each other (only the newest matters); everything else is delivered once, in order.
     send(event, payload) {
-      if (event === "status" || event === "snap") latest[event] = payload;
-      else queue.push({ seq: Date.now() * 100 + (counter++ % 100), event, payload });
-      if (queue.length > 60) queue.splice(0, queue.length - 60);
+      const t = Date.now();
+      if (event === "status" || event === "snap") {
+        latest[event] = payload; latestOut[event] = t;
+        sendSock({ from: role, event, payload, t });
+      } else {
+        const m = { seq: t * 100 + (counter++ % 100), event, payload };
+        queue.push(m); if (queue.length > 60) queue.splice(0, queue.length - 60);
+        sendSock({ from: role, ...m });
+      }
       dirty = true;
     },
     on(event, f) { (handlers[event] = handlers[event] || []).push(f); },
+    get fast() { return sockOk; },
   };
 }
 

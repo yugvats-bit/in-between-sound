@@ -49,8 +49,12 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .note{font-size:13px;color:var(--muted);margin:0}
 .pill{font:600 12px var(--mono);padding:3px 8px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
 .pill.on{color:var(--ok);border-color:var(--ok)} .pill.bad{color:var(--bad);border-color:var(--bad)} .pill.warn{color:var(--warn);border-color:var(--warn)}
-.view{aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;display:grid;place-items:center;color:#93a0a6;font:13px var(--mono)}
-.view img{width:100%;height:100%;object-fit:contain;display:block}
+.view{position:relative;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;display:grid;place-items:center;color:#93a0a6;font:13px var(--mono)}
+.view img,.view canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.view canvas{cursor:default} .view.drawing canvas{cursor:crosshair}
+.age{position:absolute;right:8px;top:8px;font:600 11px var(--mono);color:#fff;background:rgba(0,0,0,.55);padding:2px 6px;border-radius:5px}
+.setok{font:600 13px var(--mono);color:var(--ok)} .setbad{font:600 13px var(--mono);color:var(--bad)}
+.toggle.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .status{font:600 14px var(--mono);min-height:1.5em}
 .meter{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
 .meter i{display:block;height:100%;width:0;background:var(--ok);transition:width .2s}
@@ -84,7 +88,12 @@ pre{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0;max-height:260px;ove
     <div class="left">
       <section class="panel">
         <div class="row" style="justify-content:space-between"><h2>Phone view</h2><label class="row" style="gap:6px"><input type="checkbox" id="watch" checked> show camera</label></div>
-        <div class="view" id="view">Waiting for the phone. Open the prototype page on it and tap Start.</div>
+        <div class="view" id="view"><span id="viewmsg">Waiting for the phone. Open the prototype page on it and tap Start.</span><img id="viewimg" alt="Phone camera" hidden><canvas id="zones"></canvas><span class="age" id="age" hidden></span></div>
+        <div class="row">
+          <button class="secondary toggle" id="drawzone">Mark an area to ignore</button>
+          <button class="secondary" id="clearzones">Clear ignored areas</button>
+          <span class="note" id="zonenote">Drag a box over things it wrongly sees as people (fire extinguisher, reflections).</span>
+        </div>
         <div class="status" id="status">–</div>
         <div class="meter" title="Closeness"><i id="meter"></i></div>
         <div class="row">
@@ -94,8 +103,9 @@ pre{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0;max-height:260px;ove
         <div class="row">
           <button id="cmdfar">Set far</button>
           <button id="cmdclose">Set close</button>
-          <span class="note">Someone stands at the far end (or the closest spot) in view of the phone, then click.</span>
+          <span class="note" id="seesnow">Phone sees: no single person</span>
         </div>
+        <div id="setmsg" class="note">Someone stands at the far end (or the closest spot) in the phone's view; when "Phone sees" shows them, click.</div>
         <form class="row" id="sayform">
           <input type="text" id="saytext" placeholder="Type a line and the phone says it now" style="flex:1;min-width:180px">
           <button type="submit">Say it</button>
@@ -126,9 +136,12 @@ pre{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0;max-height:260px;ove
       <section class="panel">
         <h2>Personality</h2>
         <div class="grid">
-          <div><label for="voice">Voice (the phone's own voices)</label><select id="voice"></select></div>
+          <div><label for="voice">Voice (the phone's own voices)</label><select id="voice"></select>
+            <div class="row" style="margin-top:8px"><button class="secondary" id="voiceprev">Preview on phone</button><button class="secondary" id="voicenext">Try next voice</button></div></div>
           <div><label for="rate">Speaking speed: <b id="ratev"></b></label><input id="rate" type="range" min="0.5" max="1.6" step="0.05" data-unit="×"></div>
           <div><label for="pitch">Pitch: <b id="pitchv"></b></label><input id="pitch" type="range" min="0.3" max="1.8" step="0.05" data-unit=""></div>
+          <div><label>Characters (speed + pitch)</label><div class="row" id="chars"></div></div>
+          <div><label for="linegap">Next line follows after: <b id="linegapv"></b></label><input id="linegap" type="range" min="0.5" max="10" step="0.5" data-unit=" s"><p class="note">While they stay, lines keep coming with this pause between them.</p></div>
         </div>
         <div><label for="closeat">"Close" means closer than <b id="closeatv"></b> of the way from the far point to the close point</label><input id="closeat" type="range" min="0.4" max="1" step="0.05" data-pct="1"></div>
         <div class="grid">
@@ -177,6 +190,7 @@ pre{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0;max-height:260px;ove
         <div class="grid">
           <label class="row" style="gap:6px"><input type="checkbox" id="shapebeep"> Also beep for shapes the model hasn't confirmed as people (catches more far people, but causes false beeps)</label>
           <label class="row" style="gap:6px"><input type="checkbox" id="autozoom"> Zoom in on far shapes to check they're people</label>
+          <div><label for="minscore">How sure it must be that it's a person: <b id="minscorev"></b></label><input id="minscore" type="range" min="0.3" max="0.85" step="0.05" data-pct="1"><p class="note">Raise if objects get green boxes. Lower if real people get missed.</p></div>
           <div><label for="msens">Shape sensitivity: <b id="msensv"></b></label><input id="msens" type="range" min="1" max="10" step="1" data-unit=""><p class="note">Raise if far people are missed. Lower if shadows, leaves or lights set it off.</p></div>
         </div>
         <div class="row"><button class="secondary" id="resetall">Reset rhythm, voice and detection to defaults</button></div>
@@ -189,7 +203,7 @@ pre{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0;max-height:260px;ove
 import { DEFAULTS, cloudOn, currentUser, signIn, load, save, onChange, live as liveLink, addFile, removeFile, KINDS, net } from "../common/store.js";
 const $ = id => document.getElementById(id);
 let S = { ...DEFAULTS }, P = null, F = null, live = null;
-const SLIDERS = ["slow", "fast", "curve", "volume", "rate", "pitch", "closeat", "closesecs", "groupsecs", "msens"];
+const SLIDERS = ["slow", "fast", "curve", "volume", "rate", "pitch", "closeat", "closesecs", "groupsecs", "msens", "minscore", "linegap"];
 const CHECKS = ["geiger", "shapebeep", "autozoom"];
 const TEXTS = ["closelines", "grouplines"];
 
@@ -209,6 +223,12 @@ function render() {
   for (const k of TEXTS) if (document.activeElement !== $(k)) $(k).value = S[k];
   renderVoices(); renderRange();
 }
+const CHARS = [["Calm guard", 0.85, 0.75], ["Machine", 0.8, 0.35], ["Announcer", 1.05, 1], ["Nervous", 1.35, 1.4], ["Slow giant", 0.6, 0.3]];
+for (const [name, rate, pitch] of CHARS) {
+  const b = document.createElement("button"); b.className = "secondary mini"; b.textContent = name;
+  b.onclick = () => { S.rate = rate; S.pitch = pitch; render(); persist(0); live && live.send("say", { text: "Hello. I can see you from here.", opts: { voice: $("voice").value, rate, pitch } }); };
+  $("chars").append(b);
+}
 function renderVoices() {
   const sel = $("voice"), vs = (P && P.voices) || [];
   sel.innerHTML = "";
@@ -219,6 +239,7 @@ function renderVoices() {
 }
 function renderRange() {
   if (!P) return;
+  drawZones();
   for (const k of ["hFar", "hNear"]) { if (document.activeElement !== $(k)) $(k).value = P[k]; $(k + "v").textContent = Math.round(P[k] * 100) + "%"; }
   $("range").textContent = P.calibrated ? "Range is set. Fine-tune with the sliders, or use Set far / Set close again."
     : "Range not set yet: use Set far and Set close (next to the phone view), or drag these sliders.";
@@ -270,20 +291,62 @@ for (const [k, multi] of [["close", true], ["group", true], ["beep", false], ["g
 }
 $("resetall").onclick = () => { const keep = { closelines: S.closelines, grouplines: S.grouplines, voice: S.voice }; S = { ...DEFAULTS, ...keep }; render(); persist(0); };
 
+// ---- Range from what the phone sees right now ----
+let hNow = null, hNowAt = 0;
+function setPoint(which) {
+  if (!hNow || Date.now() - hNowAt > 2500) { $("setmsg").className = "setbad"; $("setmsg").textContent = "✗ Not set: the phone doesn't see anyone right now. Wait for \"Phone sees someone\", then click."; return; }
+  if (which === "far") P = { ...P, hFar: Math.min(hNow, P.hNear * 0.8) };
+  else P = { ...P, hNear: Math.max(hNow, P.hFar * 1.25) };
+  P = { ...P, calibrated: true, lastSet: { which, at: Date.now() } };
+  renderRange();
+  save("phone", P, 0).then(() => {
+    const pct = Math.round((which === "far" ? P.hFar : P.hNear) * 100);
+    $("setmsg").className = "setok";
+    $("setmsg").textContent = `✓ ${which === "far" ? "Far" : "Close"} point set at ${pct}% · ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}. The phone chirps when it gets it.`;
+  }).catch(e => { $("setmsg").className = "setbad"; $("setmsg").textContent = "✗ Not saved: " + e.message; });
+}
+
+// ---- Ignore areas, drawn on the phone view ----
+const zc = $("zones"), zx = zc.getContext("2d");
+let drawing = false, drag = null;
+function drawZones() {
+  const r = zc.getBoundingClientRect(); zc.width = r.width; zc.height = r.height;
+  zx.clearRect(0, 0, zc.width, zc.height);
+  const all = [...((P && P.ignore) || []), ...(drag ? [drag] : [])];
+  for (const z of all) {
+    zx.fillStyle = "rgba(160,170,180,.35)"; zx.fillRect(z.x * zc.width, z.y * zc.height, z.w * zc.width, z.h * zc.height);
+    zx.strokeStyle = "#e7ecee"; zx.setLineDash([5, 4]); zx.strokeRect(z.x * zc.width, z.y * zc.height, z.w * zc.width, z.h * zc.height);
+  }
+}
+window.addEventListener("resize", drawZones);
+$("drawzone").onclick = () => { drawing = !drawing; $("drawzone").classList.toggle("on", drawing); $("view").classList.toggle("drawing", drawing);
+  $("zonenote").textContent = drawing ? "Drag a box on the picture." : "Drag a box over things it wrongly sees as people (fire extinguisher, reflections)."; };
+const pos = e => { const r = zc.getBoundingClientRect(); return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }; };
+zc.addEventListener("pointerdown", e => { if (!drawing) return; const p = pos(e); drag = { x: p.x, y: p.y, w: 0, h: 0, ox: p.x, oy: p.y }; zc.setPointerCapture(e.pointerId); });
+zc.addEventListener("pointermove", e => { if (!drag) return; const p = pos(e); drag.x = Math.min(p.x, drag.ox); drag.y = Math.min(p.y, drag.oy); drag.w = Math.abs(p.x - drag.ox); drag.h = Math.abs(p.y - drag.oy); drawZones(); });
+zc.addEventListener("pointerup", () => {
+  if (!drag) return; const z = { x: drag.x, y: drag.y, w: drag.w, h: drag.h }; drag = null;
+  if (z.w > 0.01 && z.h > 0.01) { P = { ...P, ignore: [...(P.ignore || []), z] }; save("phone", P, 0); $("zonenote").textContent = `✓ ${P.ignore.length} area(s) ignored. Draw another, or click the button again to stop.`; }
+  drawZones();
+});
+$("clearzones").onclick = () => { P = { ...P, ignore: [] }; save("phone", P, 0); drawZones(); $("zonenote").textContent = "Ignored areas cleared."; };
+
 // Live link with the phone.
 let lastPhone = 0;
 function wireLive() {
   live = liveLink("studio"); if (!live) return;
   live.on("status", p => {
     lastPhone = Date.now(); $("status").textContent = p.status;
+    hNow = p.hNow; hNowAt = Date.now();
+    $("seesnow").textContent = p.hNow ? `Phone sees someone at ${Math.round(p.hNow * 100)}% of screen height` : "Phone sees: no single person";
     $("meter").style.width = (p.present ? Math.round(p.close * 100) : 0) + "%";
   });
-  live.on("snap", p => {
-    lastPhone = Date.now(); if (!$("watch").checked) return;
-    let img = $("view").querySelector("img");
-    if (!img) { $("view").innerHTML = ""; img = document.createElement("img"); img.alt = "Phone camera"; $("view").append(img); }
-    img.src = p.img;
+  let snapT = 0;
+  live.on("snap", (p, t) => {
+    lastPhone = Date.now(); snapT = Date.now(); if (!$("watch").checked) return;
+    $("viewmsg").hidden = true; $("viewimg").hidden = false; $("viewimg").src = p.img;
   });
+  setInterval(() => { const a = (Date.now() - snapT) / 1000; $("age").hidden = !snapT; $("age").textContent = a < 1.5 ? "live" : `${a.toFixed(0)} s old`; }, 500);
   const logEl = $("log"), lines = [];
   live.on("log", p => { lines.unshift(p.line); if (lines.length > 80) lines.pop(); logEl.textContent = lines.join("\n"); });
   setInterval(() => {
@@ -293,8 +356,15 @@ function wireLive() {
   }, 2000);
   $("cmdbeep").onclick = () => live.send("beep", {});
   $("cmdrelearn").onclick = () => live.send("relearn", {});
-  $("cmdfar").onclick = () => live.send("setfar", {});
-  $("cmdclose").onclick = () => live.send("setclose", {});
+  $("cmdfar").onclick = () => setPoint("far");
+  $("cmdclose").onclick = () => setPoint("close");
+  const sample = "Hello. I can see you from here.";
+  $("voiceprev").onclick = () => live.send("say", { text: sample, opts: { voice: $("voice").value, rate: S.rate, pitch: S.pitch } });
+  $("voicenext").onclick = () => {
+    const sel = $("voice"); if (sel.options.length < 2) return;
+    sel.selectedIndex = (sel.selectedIndex + 1) % sel.options.length; S.voice = sel.value; persist(0);
+    live.send("say", { text: `This is ${sel.options[sel.selectedIndex].textContent.split(" (")[0]}. ${sample}`, opts: { voice: sel.value, rate: S.rate, pitch: S.pitch } });
+  };
   $("playclose").onclick = () => live.send("say", { kind: "close" });
   $("playgroup").onclick = () => live.send("say", { kind: "group" });
   $("sayform").onsubmit = e => { e.preventDefault(); const t = $("saytext").value.trim(); if (t) live.send("say", { text: t }); };
@@ -317,7 +387,7 @@ async function boot() {
     wireLive();
     setInterval(() => { if (net.error) { $("conn").textContent = "problem: " + net.error; $("conn").className = "pill bad"; } else { $("conn").textContent = "online"; $("conn").className = "pill on"; } }, 2000);
   } else {
-    for (const id of ["cmdbeep", "cmdrelearn", "cmdfar", "cmdclose", "playclose", "playgroup"]) $(id).disabled = true;
+    for (const id of ["cmdbeep", "cmdrelearn", "cmdfar", "cmdclose", "playclose", "playgroup", "voiceprev", "voicenext"]) $(id).disabled = true;
   }
 }
 $("login").onsubmit = async e => {

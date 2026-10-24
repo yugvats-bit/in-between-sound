@@ -145,9 +145,12 @@ async function boot() {
           F = data; if (audio) for (const k of changed) await decode(k);
           if (changed.length) note(`Sounds updated: ${changed.join(", ")}.`);
         }
-        if (id === "phone") P = data;
+        if (id === "phone") {
+          const before = P; P = data;
+          if (P.lastSet && (!before || !before.lastSet || P.lastSet.at !== before.lastSet.at)) confirmSet(P.lastSet.which);
+        }
       });
-      live.on("say", p => { if (audio) speak(p.kind, p.text); });
+      live.on("say", p => { if (audio) speak(p.kind, p.text, p.opts); });
       live.on("beep", () => { if (audio) play(beepSound()); });
       live.on("relearn", () => relearn());
       live.on("setfar", () => setFar());
@@ -221,9 +224,10 @@ if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = publishVoices
 let talking = false, talkTimer = null;
 const lineIdx = { close: 0, group: 0 };
 function showSay(t) { $("say").textContent = t; $("say").hidden = !t; }
-function endTalk() { talking = false; clearTimeout(talkTimer); showSay(""); }
-function speak(kind, text) {
-  if (talking) return;
+let talkEndedAt = -1e9;
+function endTalk() { if (talking) talkEndedAt = performance.now(); talking = false; clearTimeout(talkTimer); showSay(""); }
+function speak(kind, text, opts = {}) {
+  if (talking) { if (!text) return; window.speechSynthesis?.cancel(); endTalk(); }
   talking = true; silenceEffects();
   const recs = text ? null : buffers[kind];
   if (recs && recs.length) {
@@ -240,8 +244,8 @@ function speak(kind, text) {
   }
   if (!("speechSynthesis" in window)) { endTalk(); return; }
   const u = new SpeechSynthesisUtterance(line);
-  const v = speechSynthesis.getVoices().find(v => v.name === S.voice); if (v) { u.voice = v; u.lang = v.lang; }
-  u.rate = S.rate; u.pitch = S.pitch; u.volume = Math.min(1, S.volume ?? 1);
+  const vn = opts.voice || S.voice, v = speechSynthesis.getVoices().find(v => v.name === vn); if (v) { u.voice = v; u.lang = v.lang; }
+  u.rate = opts.rate || S.rate; u.pitch = opts.pitch || S.pitch; u.volume = Math.min(1, S.volume ?? 1);
   u.onend = endTalk; u.onerror = endTalk;
   showSay(line); note(`Said: "${line}"`);
   speechSynthesis.cancel(); speechSynthesis.speak(u);
@@ -333,14 +337,32 @@ function recentHeight() {
   if (!r.length) return null;
   const hs = r.map(e => e.h).sort((a, b) => a - b); return hs[Math.floor(hs.length / 2)];
 }
+function chirp() {
+  if (!audio) return;
+  const t = audio.currentTime;
+  for (const [f, d] of [[1400, 0], [2100, 0.09]]) {
+    const o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.5, t + d + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.08);
+    o.connect(g); g.connect(master); o.start(t + d); o.stop(t + d + 0.1);
+  }
+}
+function confirmSet(which) {
+  const pct = Math.round((which === "far" ? P.hFar : P.hNear) * 100);
+  flash(`✓ ${which === "far" ? "Far" : "Close"} point set (${pct}%)`); chirp(); note(`${which === "far" ? "Far" : "Close"} point set from the laptop (${pct}% of screen).`);
+}
+function heightNow() {
+  const now = performance.now(), r = recent.filter(e => now - e.t < 1200);
+  if (!r.length) return null;
+  const hs = r.map(e => e.h).sort((a, b) => a - b); return hs[Math.floor(hs.length / 2)];
+}
 let flashT; function flash(t) { showSay(t); clearTimeout(flashT); flashT = setTimeout(() => { if (!talking) showSay(""); }, 2500); }
 function setFar() {
   const h = recentHeight(); if (!h) { flash("Nobody seen right now. Ask them to step sideways, then try again."); note("Set far failed: nobody seen in the last second."); return; }
-  P = { ...P, hFar: Math.min(h, P.hNear * 0.8), calibrated: true }; save("phone", P, 0); flash(`Far set: ${Math.round(P.hFar * 100)}% of screen`); note(`Far point set (${Math.round(P.hFar * 100)}% of screen).`);
+  P = { ...P, hFar: Math.min(h, P.hNear * 0.8), calibrated: true, lastSet: { which: "far", at: Date.now() } }; save("phone", P, 0); flash(`✓ Far point set (${Math.round(P.hFar * 100)}%)`); chirp(); note(`Far point set (${Math.round(P.hFar * 100)}% of screen).`);
 }
 function setClose() {
   const h = recentHeight(); if (!h) { flash("Nobody seen right now. Try again when they're in view."); note("Set close failed: nobody seen in the last second."); return; }
-  P = { ...P, hNear: Math.max(h, P.hFar * 1.25), calibrated: true }; save("phone", P, 0); flash(`Close set: ${Math.round(P.hNear * 100)}% of screen`); note(`Close point set (${Math.round(P.hNear * 100)}% of screen).`);
+  P = { ...P, hNear: Math.max(h, P.hFar * 1.25), calibrated: true, lastSet: { which: "close", at: Date.now() } }; save("phone", P, 0); flash(`✓ Close point set (${Math.round(P.hNear * 100)}%)`); chirp(); note(`Close point set (${Math.round(P.hNear * 100)}% of screen).`);
 }
 $("setfar").onclick = setFar;
 $("setclose").onclick = setClose;
@@ -356,7 +378,11 @@ $("exitfs").onclick = () => { document.body.classList.remove("fs"); if (document
 
 // ---------------- Main ----------------
 const GRACE = 1500, EMPTY_RESET = 1000, LOOK = 0.25;
-const WHOLE_SCORE = 0.45, ZOOM_SCORE = 0.4;   // how sure the model must be that it's a person
+// Areas marked "ignore" on the laptop (fire extinguisher, reflections): nothing centred there counts.
+function ignored(b) {
+  const vw = video.videoWidth, vh = video.videoHeight, cx = (b.x + b.w / 2) / vw, cy = (b.y + b.h / 2) / vh;
+  return (P.ignore || []).some(z => cx >= z.x && cx <= z.x + z.w && cy >= z.y && cy <= z.y + z.h);
+}
 const TRACK_MS = 1200, FOLLOW_MAX_MS = 15000; // follow a lost person's shape; give up after 15 s unconfirmed
 let tracks = [];
 let effects = [], geigerLoop = null, geigerGain = null, watchedAt = -1e9;
@@ -405,7 +431,7 @@ async function loop(det) {
   let groupSince = null, groupLast = -1e9, groupFired = false;
   let turn = 0, wholeBoxes = [], zoomBoxes = [], zoomAt = -1e9, zoomRect = null;
   let n = 0, tw = performance.now(), rate = 0, lastStatus = 0, lastSnap = 0;
-  const snap = document.createElement("canvas"); snap.width = 384; snap.height = 216; const snx = snap.getContext("2d");
+  const snap = document.createElement("canvas"); snap.width = 320; snap.height = 180; const snx = snap.getContext("2d");
 
   const gap = c => S.slow - (S.slow - S.fast) * Math.pow(c, S.curve);
   function pump() {
@@ -435,7 +461,7 @@ async function loop(det) {
   for (;;) {
     await nextFrame();
     const vw = video.videoWidth, vh = video.videoHeight;
-    const blobs = shapes();
+    const blobs = shapes().filter(b => !ignored(b));
     const now0 = performance.now();
     const people0 = [...wholeBoxes, ...(now0 - zoomAt < 900 ? zoomBoxes : [])];
     const unconfirmed = blobs.filter(b => !overlapsAny(b, people0));
@@ -449,9 +475,9 @@ async function loop(det) {
       const cs = Math.min(side, 512), k = side / cs;
       if (crop.width !== cs) { crop.width = cs; crop.height = cs; }
       cctx.drawImage(video, sx, sy, side, side, 0, 0, cs, cs);
-      zoomBoxes = det.detect(crop).detections.filter(d => d.categories[0].score >= ZOOM_SCORE).map(d => toBox(d, sx, sy, k));
+      zoomBoxes = det.detect(crop).detections.filter(d => d.categories[0].score >= S.minscore - 0.05).map(d => toBox(d, sx, sy, k)).filter(b => !ignored(b));
       zoomAt = performance.now(); zoomRect = { x: sx, y: sy, w: side, h: side };
-    } else wholeBoxes = det.detect(video).detections.filter(d => d.categories[0].score >= WHOLE_SCORE).map(d => toBox(d));
+    } else wholeBoxes = det.detect(video).detections.filter(d => d.categories[0].score >= S.minscore).map(d => toBox(d)).filter(b => !ignored(b));
     const now = performance.now();
 
     const boxes = [...wholeBoxes];
@@ -494,14 +520,17 @@ async function loop(det) {
     if (boxes.length) people = boxes.length; else if (now - lastSeen > GRACE) people = 0;
 
     // Voice: 2+ people for N s takes priority; otherwise one person close for N s.
-    if (boxes.length >= 2) { groupLast = now; if (groupSince === null) groupSince = now; }
+    // The first line waits for the "close for" / "group for" time; after that the next line
+    // follows linegap seconds after the previous one ends, for as long as it lasts.
+    if (boxes.length >= 2) { groupLast = now; if (groupSince === null) { groupSince = now; groupFired = false; } }
     else if (now - groupLast > GRACE) { groupSince = null; groupFired = false; }
-    if (boxes.some(b => b.c >= S.closeat)) { closeLast = now; if (closeSince === null) closeSince = now; }
+    if (boxes.some(b => b.c >= S.closeat)) { closeLast = now; if (closeSince === null) { closeSince = now; closeFired = false; } }
     else if (now - closeLast > GRACE) { closeSince = null; closeFired = false; }
     if (!present && now - lastSeen > GRACE + EMPTY_RESET) { groupSince = closeSince = null; groupFired = closeFired = false; }
-    if (!talking) {
-      if (groupSince !== null && !groupFired && now - groupSince >= S.groupsecs * 1000) { groupFired = true; speak("group"); }
-      else if (groupSince === null && closeSince !== null && !closeFired && now - closeSince >= S.closesecs * 1000) { closeFired = true; speak("close"); }
+    const rested = now - talkEndedAt >= S.linegap * 1000;
+    if (!talking && rested) {
+      if (groupSince !== null && now - groupSince >= S.groupsecs * 1000) { groupFired = true; speak("group"); }
+      else if (groupSince === null && closeSince !== null && now - closeSince >= S.closesecs * 1000) { closeFired = true; speak("close"); }
     }
     pump();
 
@@ -513,11 +542,11 @@ async function loop(det) {
       ? `${src} · closeness ${Math.round(close * 100)}% · gap ${gap(close).toFixed(2)} s · people ${people}${dwell}${grp}`
       : `watching · ${rate.toFixed(1)} looks/s`;
     hud.textContent = status;
-    if (live && now - lastStatus > 350) { lastStatus = now; live.send("status", { status, close, present, people, talking }); }
-    if (live && now - lastSnap > 1500) {
+    if (live && now - lastStatus > 350) { lastStatus = now; live.send("status", { status, close, present, people, talking, hNow: heightNow() }); }
+    if (live && now - lastSnap > 450) {
       lastSnap = now;
-      snx.drawImage(video, 0, 0, 384, 216); snx.drawImage(overlay, 0, 0, 384, 216);
-      live.send("snap", { img: snap.toDataURL("image/jpeg", 0.55) });
+      snx.drawImage(video, 0, 0, 320, 180); snx.drawImage(overlay, 0, 0, 320, 180);
+      live.send("snap", { img: snap.toDataURL("image/jpeg", 0.5) });
     }
   }
 }
@@ -528,6 +557,10 @@ function draw(boxes, shapesOnly, zoomRect) {
   octx.clearRect(0, 0, vw, vh);
   const lw = Math.max(2, vw / 400), fs = Math.max(18, vw / 50);
   if (zoomRect) { octx.setLineDash([lw * 4, lw * 3]); octx.lineWidth = lw; octx.strokeStyle = "#ffb020"; octx.strokeRect(zoomRect.x, zoomRect.y, zoomRect.w, zoomRect.h); octx.setLineDash([]); }
+  for (const z of P.ignore || []) {
+    octx.fillStyle = "rgba(120,130,140,.35)"; octx.fillRect(z.x * vw, z.y * vh, z.w * vw, z.h * vh);
+    octx.strokeStyle = "rgba(200,210,220,.8)"; octx.lineWidth = lw; octx.strokeRect(z.x * vw, z.y * vh, z.w * vw, z.h * vh);
+  }
   octx.font = `600 ${fs}px ui-monospace, monospace`; octx.textBaseline = "bottom";
   const label = (b, color) => {
     octx.lineWidth = lw * 1.5; octx.strokeStyle = color; octx.strokeRect(b.x, b.y, b.w, b.h);
