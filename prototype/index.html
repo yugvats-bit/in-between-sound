@@ -150,6 +150,8 @@ async function boot() {
       live.on("say", p => { if (audio) speak(p.kind, p.text); });
       live.on("beep", () => { if (audio) play(beepSound()); });
       live.on("relearn", () => relearn());
+      live.on("setfar", () => setFar());
+      live.on("setclose", () => setClose());
       live.on("watch", () => { watchedAt = performance.now(); });
     } else setConn("Not connected: settings stay on this phone", "off");
   } catch (e) { setConn("Couldn't reach the studio: " + e.message, "bad"); }
@@ -326,20 +328,22 @@ function closenessOf(b) {
 const recent = [];
 function recentHeight() {
   const now = performance.now();
-  let r = recent.filter(e => now - e.t < 1500 && e.src === "person");
-  if (!r.length) r = recent.filter(e => now - e.t < 1500);
+  let r = recent.filter(e => now - e.t < 3000 && e.src === "person");
+  if (!r.length) r = recent.filter(e => now - e.t < 3000);
   if (!r.length) return null;
   const hs = r.map(e => e.h).sort((a, b) => a - b); return hs[Math.floor(hs.length / 2)];
 }
 let flashT; function flash(t) { showSay(t); clearTimeout(flashT); flashT = setTimeout(() => { if (!talking) showSay(""); }, 2500); }
-$("setfar").onclick = () => {
-  const h = recentHeight(); if (!h) { flash("Nobody seen right now. Ask them to step sideways, then tap again."); return; }
-  P = { ...P, hFar: Math.min(h, P.hNear * 0.8), calibrated: true }; save("phone", P); flash(`Far set: ${Math.round(P.hFar * 100)}% of screen`); note("Far point set.");
-};
-$("setclose").onclick = () => {
-  const h = recentHeight(); if (!h) { flash("Nobody seen right now. Tap again when they're in view."); return; }
-  P = { ...P, hNear: Math.max(h, P.hFar * 1.25), calibrated: true }; save("phone", P); flash(`Close set: ${Math.round(P.hNear * 100)}% of screen`); note("Close point set.");
-};
+function setFar() {
+  const h = recentHeight(); if (!h) { flash("Nobody seen right now. Ask them to step sideways, then try again."); note("Set far failed: nobody seen in the last second."); return; }
+  P = { ...P, hFar: Math.min(h, P.hNear * 0.8), calibrated: true }; save("phone", P, 0); flash(`Far set: ${Math.round(P.hFar * 100)}% of screen`); note(`Far point set (${Math.round(P.hFar * 100)}% of screen).`);
+}
+function setClose() {
+  const h = recentHeight(); if (!h) { flash("Nobody seen right now. Try again when they're in view."); note("Set close failed: nobody seen in the last second."); return; }
+  P = { ...P, hNear: Math.max(h, P.hFar * 1.25), calibrated: true }; save("phone", P, 0); flash(`Close set: ${Math.round(P.hNear * 100)}% of screen`); note(`Close point set (${Math.round(P.hNear * 100)}% of screen).`);
+}
+$("setfar").onclick = setFar;
+$("setclose").onclick = setClose;
 
 // ---------------- Full screen ----------------
 function enterFs() {

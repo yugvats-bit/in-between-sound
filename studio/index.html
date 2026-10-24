@@ -91,6 +91,11 @@ pre{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0;max-height:260px;ove
           <button class="secondary" id="cmdbeep">Beep on phone</button>
           <button class="secondary" id="cmdrelearn">Learn empty alley</button>
         </div>
+        <div class="row">
+          <button id="cmdfar">Set far</button>
+          <button id="cmdclose">Set close</button>
+          <span class="note">Someone stands at the far end (or the closest spot) in view of the phone, then click.</span>
+        </div>
         <form class="row" id="sayform">
           <input type="text" id="saytext" placeholder="Type a line and the phone says it now" style="flex:1;min-width:180px">
           <button type="submit">Say it</button>
@@ -110,6 +115,10 @@ pre{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0;max-height:260px;ove
           <div><label for="fast">Gap between beeps when close: <b id="fastv"></b></label><input id="fast" type="range" min="0.04" max="0.6" step="0.01" data-unit=" s"></div>
           <div><label for="curve">How it speeds up: <b id="curvev"></b></label><input id="curve" type="range" min="0.4" max="3" step="0.1" data-unit=""><p class="note">Below 1 speeds up early. Above 1 stays slow, then rushes at the end.</p></div>
           <div><label for="volume">Overall volume: <b id="volumev"></b></label><input id="volume" type="range" min="0.1" max="2" step="0.05" data-unit="×"></div>
+        </div>
+        <div class="grid">
+          <div><label for="hFar">Far point: person is <b id="hFarv"></b> of screen height</label><input id="hFar" type="range" min="0.01" max="0.6" step="0.01" data-pct="1"></div>
+          <div><label for="hNear">Close point: person is <b id="hNearv"></b> of screen height</label><input id="hNear" type="range" min="0.1" max="1" step="0.01" data-pct="1"></div>
         </div>
         <p class="note" id="range"></p>
       </section>
@@ -210,10 +219,15 @@ function renderVoices() {
 }
 function renderRange() {
   if (!P) return;
-  $("range").textContent = P.calibrated
-    ? `Range set on the phone: far point ${Math.round(P.hFar * 100)}% of screen height, close point ${Math.round(P.hNear * 100)}%.`
-    : "Range not set yet: use Set far and Set close on the phone in the alley.";
+  for (const k of ["hFar", "hNear"]) { if (document.activeElement !== $(k)) $(k).value = P[k]; $(k + "v").textContent = Math.round(P[k] * 100) + "%"; }
+  $("range").textContent = P.calibrated ? "Range is set. Fine-tune with the sliders, or use Set far / Set close again."
+    : "Range not set yet: use Set far and Set close (next to the phone view), or drag these sliders.";
 }
+for (const k of ["hFar", "hNear"]) $(k).addEventListener("input", () => {
+  P = { ...P, [k]: +$(k).value, calibrated: true };
+  if (P.hNear < P.hFar * 1.25) { if (k === "hFar") P.hNear = Math.min(1, P.hFar * 1.25); else P.hFar = P.hNear / 1.25; }
+  renderRange(); save("phone", P, 500).catch(e => { $("saved").textContent = "not saved: " + e.message; });
+});
 function renderFiles() {
   for (const k of KINDS) {
     const ul = $(k + "list"); ul.innerHTML = "";
@@ -279,6 +293,8 @@ function wireLive() {
   }, 2000);
   $("cmdbeep").onclick = () => live.send("beep", {});
   $("cmdrelearn").onclick = () => live.send("relearn", {});
+  $("cmdfar").onclick = () => live.send("setfar", {});
+  $("cmdclose").onclick = () => live.send("setclose", {});
   $("playclose").onclick = () => live.send("say", { kind: "close" });
   $("playgroup").onclick = () => live.send("say", { kind: "group" });
   $("sayform").onsubmit = e => { e.preventDefault(); const t = $("saytext").value.trim(); if (t) live.send("say", { text: t }); };
@@ -301,7 +317,7 @@ async function boot() {
     wireLive();
     setInterval(() => { if (net.error) { $("conn").textContent = "problem: " + net.error; $("conn").className = "pill bad"; } else { $("conn").textContent = "online"; $("conn").className = "pill on"; } }, 2000);
   } else {
-    for (const id of ["cmdbeep", "cmdrelearn", "playclose", "playgroup"]) $(id).disabled = true;
+    for (const id of ["cmdbeep", "cmdrelearn", "cmdfar", "cmdclose", "playclose", "playgroup"]) $(id).disabled = true;
   }
 }
 $("login").onsubmit = async e => {
