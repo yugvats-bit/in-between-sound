@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alley Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.50.0/dist/umd/supabase.js"></script>
+<style>
+/* Layout: laptop control room. Left: what the phone sees and hears, live. Right: everything you can change. */
+:root{
+  --bg:#eef1f2; --panel:#ffffff; --fg:#141a1d; --muted:#5b676d; --line:#d3dade;
+  --accent:#1f4fd8; --ok:#11804f; --bad:#c22f2f; --warn:#a86400;
+  --display:"Archivo",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1316; --panel:#171d21; --fg:#e7ecee; --muted:#93a0a6; --line:#2a3338; --accent:#7c9cff; --ok:#3fcf8e; --bad:#ff6b6b; --warn:#f0b04a; color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+label.row{flex-wrap:nowrap;align-items:flex-start}
+
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--display);padding:24px max(16px,env(safe-area-inset-right)) 40px max(16px,env(safe-area-inset-left))}
+.wrap{max-width:1240px;margin:0 auto;display:grid;gap:18px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-size:28px;font-weight:800;margin:0}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0}
+.cols{display:grid;gap:18px;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);align-items:start}
+@media (max-width:900px){.cols{grid-template-columns:1fr}}
+.left{position:sticky;top:16px;display:grid;gap:14px}
+@media (max-width:900px){.left{position:static}}
+.right{display:grid;gap:14px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;gap:12px;min-width:0}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+label{font-size:13px;color:var(--muted);display:block}
+label b{color:var(--fg);font-family:var(--mono);font-weight:600}
+input[type=range]{width:100%;accent-color:var(--accent)}
+textarea,select,input[type=email],input[type=password],input[type=text]{width:100%;font:15px/1.5 var(--display);padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+textarea{min-height:150px;resize:vertical}
+button{font:600 14px var(--display);border:0;border-radius:9px;padding:10px 14px;cursor:pointer;background:var(--accent);color:#fff;min-height:40px}
+button.secondary{background:transparent;color:var(--fg);border:1px solid var(--line)}
+button.mini{min-height:30px;padding:4px 10px;font-size:12px}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.note{font-size:13px;color:var(--muted);margin:0}
+.pill{font:600 12px var(--mono);padding:3px 8px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.pill.on{color:var(--ok);border-color:var(--ok)} .pill.bad{color:var(--bad);border-color:var(--bad)} .pill.warn{color:var(--warn);border-color:var(--warn)}
+.view{aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;display:grid;place-items:center;color:#93a0a6;font:13px var(--mono)}
+.view img{width:100%;height:100%;object-fit:contain;display:block}
+.status{font:600 14px var(--mono);min-height:1.5em}
+.meter{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:var(--ok);transition:width .2s}
+pre{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0;max-height:260px;overflow:auto}
+.files{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.files li{display:flex;gap:8px;align-items:center;justify-content:space-between;font:13px var(--mono);background:var(--bg);border-radius:8px;padding:6px 8px;min-width:0}
+.files li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.saved{font:12px var(--mono);color:var(--muted)}
+.gate{max-width:420px;margin:12vh auto;display:grid;gap:12px}
+</style>
+</head>
+<body>
+<div class="gate panel" id="gate" hidden>
+  <h1>Alley Studio</h1>
+  <p class="note">Sign in with the account you made in Supabase.</p>
+  <form id="login" class="grid" style="grid-template-columns:1fr">
+    <input id="email" type="email" placeholder="Email" autocomplete="username" required>
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+  </form>
+  <p class="note" id="loginerr" style="color:var(--bad)"></p>
+</div>
+
+<div class="wrap" id="app" hidden>
+  <header>
+    <h1>Alley Studio</h1>
+    <div class="row"><span class="pill" id="conn">…</span><span class="pill" id="phonepill">phone: not seen</span><span class="saved" id="saved"></span></div>
+  </header>
+
+  <div class="cols">
+    <div class="left">
+      <section class="panel">
+        <div class="row" style="justify-content:space-between"><h2>Phone view</h2><label class="row" style="gap:6px"><input type="checkbox" id="watch" checked> show camera</label></div>
+        <div class="view" id="view">Waiting for the phone. Open the prototype page on it and tap Start.</div>
+        <div class="status" id="status">–</div>
+        <div class="meter" title="Closeness"><i id="meter"></i></div>
+        <div class="row">
+          <button class="secondary" id="cmdbeep">Beep on phone</button>
+          <button class="secondary" id="cmdrelearn">Learn empty alley</button>
+        </div>
+        <form class="row" id="sayform">
+          <input type="text" id="saytext" placeholder="Type a line and the phone says it now" style="flex:1;min-width:180px">
+          <button type="submit">Say it</button>
+        </form>
+      </section>
+      <section class="panel">
+        <h2>What happened on the phone</h2>
+        <pre id="log">Nothing yet.</pre>
+      </section>
+    </div>
+
+    <div class="right">
+      <section class="panel">
+        <h2>Beep rhythm</h2>
+        <div class="grid">
+          <div><label for="slow">Gap between beeps when far: <b id="slowv"></b></label><input id="slow" type="range" min="0.3" max="3" step="0.05" data-unit=" s"></div>
+          <div><label for="fast">Gap between beeps when close: <b id="fastv"></b></label><input id="fast" type="range" min="0.04" max="0.6" step="0.01" data-unit=" s"></div>
+          <div><label for="curve">How it speeds up: <b id="curvev"></b></label><input id="curve" type="range" min="0.4" max="3" step="0.1" data-unit=""><p class="note">Below 1 speeds up early. Above 1 stays slow, then rushes at the end.</p></div>
+          <div><label for="volume">Overall volume: <b id="volumev"></b></label><input id="volume" type="range" min="0.1" max="2" step="0.05" data-unit="×"></div>
+        </div>
+        <p class="note" id="range"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Personality</h2>
+        <div class="grid">
+          <div><label for="voice">Voice (the phone's own voices)</label><select id="voice"></select></div>
+          <div><label for="rate">Speaking speed: <b id="ratev"></b></label><input id="rate" type="range" min="0.5" max="1.6" step="0.05" data-unit="×"></div>
+          <div><label for="pitch">Pitch: <b id="pitchv"></b></label><input id="pitch" type="range" min="0.3" max="1.8" step="0.05" data-unit=""></div>
+        </div>
+        <div><label for="closeat">"Close" means closer than <b id="closeatv"></b> of the way from the far point to the close point</label><input id="closeat" type="range" min="0.4" max="1" step="0.05" data-pct="1"></div>
+        <div class="grid">
+          <div class="panel" style="padding:12px">
+            <label for="closesecs">One person stays close for <b id="closesecsv"></b></label>
+            <input id="closesecs" type="range" min="1" max="10" step="0.5" data-unit=" s">
+            <label for="closelines">Lines, said in order (one per row)</label>
+            <textarea id="closelines"></textarea>
+            <label>Or your recordings, played in order instead of the lines</label>
+            <ul class="files" id="closelist"></ul>
+            <input type="file" id="closeup" accept="audio/*" multiple aria-label="Add close recordings">
+            <button class="secondary" id="playclose">Play next on phone</button>
+          </div>
+          <div class="panel" style="padding:12px">
+            <label for="groupsecs">2+ people in view for <b id="groupsecsv"></b></label>
+            <input id="groupsecs" type="range" min="1" max="15" step="0.5" data-unit=" s">
+            <label for="grouplines">Lines, said in order (one per row)</label>
+            <textarea id="grouplines"></textarea>
+            <label>Or your recordings</label>
+            <ul class="files" id="grouplist"></ul>
+            <input type="file" id="groupup" accept="audio/*" multiple aria-label="Add group recordings">
+            <button class="secondary" id="playgroup">Play next on phone</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Sounds</h2>
+        <div class="grid">
+          <div>
+            <label>Beep sound (empty = built-in beep)</label>
+            <ul class="files" id="beeplist"></ul>
+            <input type="file" id="beepup" accept="audio/*" aria-label="Beep sound">
+          </div>
+          <div>
+            <label>Geiger loop for 2+ people (empty = built-in crackle)</label>
+            <ul class="files" id="geigerlist"></ul>
+            <input type="file" id="geigerup" accept="audio/*" aria-label="Geiger sound">
+            <label class="row" style="gap:6px;margin-top:8px"><input type="checkbox" id="geiger"> Geiger layer on</label>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Detection</h2>
+        <div class="grid">
+          <label class="row" style="gap:6px"><input type="checkbox" id="usemotion"> Beep for any shape that isn't the empty alley (catches far people)</label>
+          <label class="row" style="gap:6px"><input type="checkbox" id="autozoom"> Zoom in on far shapes to check they're people</label>
+          <div><label for="msens">Shape sensitivity: <b id="msensv"></b></label><input id="msens" type="range" min="1" max="10" step="1" data-unit=""><p class="note">Raise if far people are missed. Lower if shadows, leaves or lights set it off.</p></div>
+        </div>
+        <div class="row"><button class="secondary" id="resetall">Reset rhythm, voice and detection to defaults</button></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { DEFAULTS, cloudOn, currentUser, signIn, load, save, onChange, live as liveLink, addFile, removeFile, KINDS } from "../common/store.js";
+const $ = id => document.getElementById(id);
+let S = { ...DEFAULTS }, P = null, F = null, live = null;
+const SLIDERS = ["slow", "fast", "curve", "volume", "rate", "pitch", "closeat", "closesecs", "groupsecs", "msens"];
+const CHECKS = ["geiger", "usemotion", "autozoom"];
+const TEXTS = ["closelines", "grouplines"];
+
+function fmt(el) {
+  const v = +el.value; if (el.dataset.pct) return Math.round(v * 100) + "%";
+  return v.toFixed(+el.step >= 1 ? 0 : +el.step >= 0.1 ? 1 : 2) + (el.dataset.unit || "");
+}
+let savedT;
+function persist(delay) {
+  $("saved").textContent = "saving…";
+  save("settings", S, delay).then(() => { $("saved").textContent = "saved " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); })
+    .catch(e => { $("saved").textContent = "not saved: " + e.message; });
+}
+function render() {
+  for (const k of SLIDERS) { const el = $(k); if (document.activeElement !== el) el.value = S[k]; $(k + "v").textContent = fmt(el); }
+  for (const k of CHECKS) $(k).checked = !!S[k];
+  for (const k of TEXTS) if (document.activeElement !== $(k)) $(k).value = S[k];
+  renderVoices(); renderRange();
+}
+function renderVoices() {
+  const sel = $("voice"), vs = (P && P.voices) || [];
+  sel.innerHTML = "";
+  if (!vs.length) { const o = document.createElement("option"); o.value = S.voice || ""; o.textContent = "Open the prototype on the phone once to list its voices"; sel.append(o); return; }
+  const sorted = [...vs].sort((a, b) => (/IN/i.test(b.lang) - /IN/i.test(a.lang)) || a.lang.localeCompare(b.lang));
+  for (const v of sorted) { const o = document.createElement("option"); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; sel.append(o); }
+  sel.value = vs.some(v => v.name === S.voice) ? S.voice : sorted[0].name;
+}
+function renderRange() {
+  if (!P) return;
+  $("range").textContent = P.calibrated
+    ? `Range set on the phone: far point ${Math.round(P.hFar * 100)}% of screen height, close point ${Math.round(P.hNear * 100)}%.`
+    : "Range not set yet: use Set far and Set close on the phone in the alley.";
+}
+function renderFiles() {
+  for (const k of KINDS) {
+    const ul = $(k + "list"); ul.innerHTML = "";
+    (F[k] || []).forEach((f, i) => {
+      const li = document.createElement("li");
+      const name = document.createElement("span"); name.textContent = `${i + 1}. ${f.name}`;
+      const btns = document.createElement("div"); btns.className = "row"; btns.style.gap = "4px";
+      if (i > 0) { const up = document.createElement("button"); up.className = "secondary mini"; up.textContent = "↑"; up.title = "Move up";
+        up.onclick = () => { const a = F[k]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; saveFiles(); }; btns.append(up); }
+      const rm = document.createElement("button"); rm.className = "secondary mini"; rm.textContent = "Remove";
+      rm.onclick = async () => { F[k] = F[k].filter(x => x !== f); await saveFiles(); removeFile(f.path).catch(() => {}); };
+      btns.append(rm); li.append(name, btns); ul.append(li);
+    });
+    if (!(F[k] || []).length) { const li = document.createElement("li"); li.innerHTML = `<span style="color:var(--muted)">none</span>`; ul.append(li); }
+  }
+}
+async function saveFiles() {
+  renderFiles(); $("saved").textContent = "saving sounds…";
+  try { await save("files", F, 0); $("saved").textContent = "sounds saved"; } catch (e) { $("saved").textContent = "sounds not saved: " + e.message; }
+}
+
+// Bind inputs once.
+for (const k of SLIDERS) $(k).addEventListener("input", () => { S[k] = +$(k).value; $(k + "v").textContent = fmt($(k)); persist(500); });
+for (const k of CHECKS) $(k).addEventListener("change", () => { S[k] = $(k).checked; persist(0); });
+for (const k of TEXTS) $(k).addEventListener("input", () => { S[k] = $(k).value; persist(800); });
+$("voice").addEventListener("change", () => { S.voice = $("voice").value; persist(0); });
+for (const [k, multi] of [["close", true], ["group", true], ["beep", false], ["geiger", false]]) {
+  $(k + "up").addEventListener("change", async () => {
+    const files = [...$(k + "up").files]; if (!files.length) return;
+    $("saved").textContent = `uploading ${files.length} file(s)…`;
+    try {
+      const added = []; for (const f of files) added.push(await addFile(k, f));
+      const old = multi ? [] : (F[k] || []);
+      F[k] = multi ? [...(F[k] || []), ...added] : added;
+      await saveFiles();
+      for (const o of old) removeFile(o.path).catch(() => {});
+    } catch (e) { $("saved").textContent = "upload failed: " + e.message; }
+    $(k + "up").value = "";
+  });
+}
+$("resetall").onclick = () => { const keep = { closelines: S.closelines, grouplines: S.grouplines, voice: S.voice }; S = { ...DEFAULTS, ...keep }; render(); persist(0); };
+
+// Live link with the phone.
+let lastPhone = 0;
+function wireLive() {
+  live = liveLink(); if (!live) return;
+  live.on("status", p => {
+    lastPhone = Date.now(); $("status").textContent = p.status;
+    $("meter").style.width = (p.present ? Math.round(p.close * 100) : 0) + "%";
+  });
+  live.on("snap", p => {
+    lastPhone = Date.now();
+    let img = $("view").querySelector("img");
+    if (!img) { $("view").innerHTML = ""; img = document.createElement("img"); img.alt = "Phone camera"; $("view").append(img); }
+    img.src = p.img;
+  });
+  const logEl = $("log"), lines = [];
+  live.on("log", p => { lines.unshift(p.line); if (lines.length > 80) lines.pop(); logEl.textContent = lines.join("\n"); });
+  setInterval(() => {
+    const ago = (Date.now() - lastPhone) / 1000;
+    $("phonepill").textContent = lastPhone ? (ago < 3 ? "phone: live" : `phone: last seen ${Math.round(ago)} s ago`) : "phone: not seen";
+    $("phonepill").className = "pill " + (lastPhone && ago < 3 ? "on" : "");
+    if ($("watch").checked) live.send("watch", {});
+  }, 2000);
+  $("cmdbeep").onclick = () => live.send("beep", {});
+  $("cmdrelearn").onclick = () => live.send("relearn", {});
+  $("playclose").onclick = () => live.send("say", { kind: "close" });
+  $("playgroup").onclick = () => live.send("say", { kind: "group" });
+  $("sayform").onsubmit = e => { e.preventDefault(); const t = $("saytext").value.trim(); if (t) live.send("say", { text: t }); };
+}
+
+async function boot() {
+  if (cloudOn && !(await currentUser())) { $("gate").hidden = false; $("app").hidden = true; return; }
+  $("gate").hidden = true; $("app").hidden = false;
+  try {
+    S = await load("settings"); P = await load("phone"); F = await load("files");
+    $("conn").textContent = cloudOn ? "online" : "not connected: saved in this browser only"; $("conn").className = "pill " + (cloudOn ? "on" : "warn");
+  } catch (e) { $("conn").textContent = "couldn't load: " + e.message; $("conn").className = "pill bad"; F = F || { close: [], group: [], beep: [], geiger: [] }; }
+  render(); renderFiles();
+  if (cloudOn) {
+    onChange((id, data) => {
+      if (id === "settings") { S = data; render(); }
+      if (id === "phone") { P = data; renderVoices(); renderRange(); }
+      if (id === "files") { F = data; renderFiles(); }
+    });
+    wireLive();
+  } else {
+    for (const id of ["cmdbeep", "cmdrelearn", "playclose", "playgroup"]) $(id).disabled = true;
+  }
+}
+$("login").onsubmit = async e => {
+  e.preventDefault(); $("loginerr").textContent = "";
+  try { await signIn($("email").value, $("password").value); boot(); } catch (err) { $("loginerr").textContent = err.message; }
+};
+boot();
+</script>
+</body>
+</html>

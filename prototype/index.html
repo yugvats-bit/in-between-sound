@@ -7,8 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.50.0/dist/umd/supabase.js"></script>
 <style>
-/* Layout: start → full-screen landscape camera with a slim control bar; settings below when not full screen. */
+/* Layout: phone page. Sign in once → Start → full-screen landscape camera with a slim bar. All editing lives in the laptop studio. */
 :root{
   --bg:#eef1f2; --panel:#ffffff; --fg:#141a1d; --muted:#5b676d; --line:#d3dade;
   --accent:#1f4fd8; --ok:#11804f; --bad:#c22f2f;
@@ -18,41 +19,39 @@
 @media (prefers-color-scheme:dark){:root{
   --bg:#0f1316; --panel:#171d21; --fg:#e7ecee; --muted:#93a0a6; --line:#2a3338; --accent:#7c9cff; --ok:#3fcf8e; --bad:#ff6b6b; color-scheme:dark}}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
+
 html,body{margin:0}
 body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--display);
   padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
-main{max-width:760px;margin:0 auto;display:grid;gap:18px}
+main{max-width:760px;margin:0 auto;display:grid;gap:16px}
 h1{font-size:28px;font-weight:800;margin:0}
-h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 10px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
 .lede{color:var(--muted);margin:4px 0 0;max-width:60ch}
 button{font:600 15px var(--display);border:0;border-radius:10px;padding:12px 16px;cursor:pointer;background:var(--accent);color:#fff;min-height:44px}
 button.secondary{background:transparent;color:var(--fg);border:1px solid var(--line)}
 button:disabled{opacity:.5}
-button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:12px}
-.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
-label{font-size:13px;color:var(--muted);display:block}
-label b{color:var(--fg);font-family:var(--mono);font-weight:600}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+input[type=email],input[type=password]{font:16px var(--display);padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
 input[type=range]{width:100%;accent-color:var(--accent)}
-textarea,select{width:100%;font:14px/1.5 var(--display);padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
-textarea{min-height:110px;resize:vertical}
-.note{font-size:13px;color:var(--muted);margin:0}
-.files{font:12px var(--mono);color:var(--muted)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:10px}
+.conn{font:600 13px var(--mono)} .conn.on{color:var(--ok)} .conn.off{color:var(--muted)} .conn.bad{color:var(--bad)}
+label{font-size:13px;color:var(--muted);display:block}
+label b{color:var(--fg);font-family:var(--mono)}
 .stage{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:16/9;max-width:100%}
 .stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
-.hud{position:absolute;left:8px;top:8px;right:8px;font:600 13px var(--mono);color:#fff;background:rgba(0,0,0,.55);padding:5px 9px;border-radius:6px;width:fit-content;max-width:calc(100% - 16px)}
-.say{position:absolute;left:50%;bottom:16%;transform:translateX(-50%);font:700 20px var(--display);color:#fff;background:rgba(0,0,0,.6);padding:8px 14px;border-radius:10px;max-width:80%;text-align:center}
+.hud{position:absolute;left:8px;top:8px;font:600 13px var(--mono);color:#fff;background:rgba(0,0,0,.55);padding:5px 9px;border-radius:6px;max-width:calc(100% - 16px)}
+.say{position:absolute;left:50%;bottom:18%;transform:translateX(-50%);font:700 20px var(--display);color:#fff;background:rgba(0,0,0,.6);padding:8px 14px;border-radius:10px;max-width:80%;text-align:center}
 .bar{display:none}
-pre{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0;max-height:220px;overflow:auto}
-/* Full screen */
+pre{font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0;max-height:240px;overflow:auto}
 body.fs .stage{position:fixed;inset:0;border-radius:0;aspect-ratio:auto;z-index:5}
 body.fs .bar{display:flex;position:fixed;z-index:6;left:0;right:0;bottom:0;gap:8px;flex-wrap:wrap;align-items:center;
   background:rgba(10,14,16,.7);padding:8px max(12px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
 body.fs .bar button{min-height:40px;padding:8px 12px;font-size:14px}
 body.fs .bar button.secondary{color:#e7ecee;border-color:#53616a}
-body.fs .bar .quick{display:none;flex-basis:100%;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
-body.fs .bar .quick.open{display:grid}
+.quick{display:none;flex-basis:100%;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.quick.open{display:grid}
 body.fs .bar label{color:#cfd8dc} body.fs .bar label b{color:#fff}
 body.fs .hud{top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left))}
 </style>
@@ -61,12 +60,22 @@ body.fs .hud{top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-in
 <main>
   <header>
     <h1>Alley Prototype</h1>
-    <p class="lede">One camera with a voice. Beeps begin when someone appears far away and speed up as they come closer. If someone stays close, or people gather, it speaks.</p>
+    <p class="lede">The phone in the alley. Edit lines, voice and sounds from the <a href="../studio/">studio</a> on your laptop; changes arrive here live.</p>
   </header>
+
+  <section class="panel" id="loginpanel" hidden>
+    <h2>Sign in once</h2>
+    <form id="login" class="row">
+      <input id="email" type="email" placeholder="Email" autocomplete="username" required>
+      <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+    </form>
+    <p class="conn bad" id="loginerr"></p>
+  </section>
 
   <div class="row">
     <button id="start">Start</button>
-    <button id="testbeep" class="secondary">Test beep</button>
+    <span class="conn" id="conn"></span>
   </div>
 
   <div class="stage" id="stage">
@@ -77,6 +86,7 @@ body.fs .hud{top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-in
     <div class="bar" id="bar">
       <button id="setfar">Set far</button>
       <button id="setclose">Set close</button>
+      <button id="relearn" class="secondary">Learn empty alley</button>
       <button id="quickbtn" class="secondary">Sliders</button>
       <button id="exitfs" class="secondary">Exit full screen</button>
       <div class="quick" id="quick"></div>
@@ -84,59 +94,8 @@ body.fs .hud{top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-in
   </div>
 
   <section class="panel">
-    <h2>Range: tune the beeps to this alley</h2>
-    <p class="note">Have someone stand at the far end and tap <b>Set far</b>. Then have them stand where beeping should be fastest and tap <b>Set close</b>. Both buttons are on the bar at the bottom of the full-screen camera view.</p>
-    <p class="note" id="rangenote"></p>
-    <div class="grid" id="beepctl">
-      <div><label for="slow">Gap between beeps when far: <b id="slowv"></b></label><input id="slow" type="range" min="0.3" max="3" step="0.05" data-unit=" s"></div>
-      <div><label for="fast">Gap between beeps when close: <b id="fastv"></b></label><input id="fast" type="range" min="0.04" max="0.6" step="0.01" data-unit=" s"></div>
-      <div><label for="curve">How it speeds up: <b id="curvev"></b></label><input id="curve" type="range" min="0.4" max="3" step="0.1" data-unit=""><span class="note">Below 1: speeds up early. Above 1: stays slow, then rushes at the end.</span></div>
-    </div>
-  </section>
-
-  <section class="panel">
-    <h2>Personality</h2>
-    <div class="grid">
-      <div><label for="voice">Voice</label><select id="voice"></select></div>
-      <div><label for="rate">Speaking speed: <b id="ratev"></b></label><input id="rate" type="range" min="0.5" max="1.6" step="0.05" data-unit="×"></div>
-      <div><label for="pitch">Voice pitch: <b id="pitchv"></b></label><input id="pitch" type="range" min="0.3" max="1.8" step="0.05" data-unit=""></div>
-    </div>
-    <div class="grid">
-      <div>
-        <label for="closelines">When one person stays close for <b id="closesecsv"></b>: one line per row, said in order</label>
-        <textarea id="closelines"></textarea>
-        <input id="closesecs" type="range" min="1" max="10" step="0.5" data-unit=" s" aria-label="Seconds close before speaking">
-        <label for="closefiles">…or use your own recordings instead (played in order)</label>
-        <input id="closefiles" type="file" accept="audio/*" multiple>
-        <div class="files" id="closefilesinfo"></div>
-        <div class="row"><button id="testclose" class="secondary">Play next</button><button id="clearclose" class="secondary">Remove recordings</button></div>
-      </div>
-      <div>
-        <label for="grouplines">When 2+ people are in view for <b id="groupsecsv"></b>: one line per row</label>
-        <textarea id="grouplines"></textarea>
-        <input id="groupsecs" type="range" min="1" max="15" step="0.5" data-unit=" s" aria-label="Seconds with 2+ people before speaking">
-        <label for="groupfiles">…or use your own recordings instead</label>
-        <input id="groupfiles" type="file" accept="audio/*" multiple>
-        <div class="files" id="groupfilesinfo"></div>
-        <div class="row"><button id="testgroup" class="secondary">Play next</button><button id="cleargroup" class="secondary">Remove recordings</button></div>
-      </div>
-    </div>
-    <div><label for="closeat">"Close" means closer than: <b id="closeatv"></b> of the way down the alley</label><input id="closeat" type="range" min="0.4" max="1" step="0.05" data-unit="" data-pct="1"></div>
-  </section>
-
-  <section class="panel">
-    <h2>Sounds and detection</h2>
-    <div class="grid">
-      <div><label for="beepfile">Beep sound (optional, replaces the built-in beep)</label><input id="beepfile" type="file" accept="audio/*"><div class="files" id="beepfileinfo"></div></div>
-      <div><label for="geigerfile">Geiger sound for 2+ people (optional, looped)</label><input id="geigerfile" type="file" accept="audio/*"><div class="files" id="geigerfileinfo"></div></div>
-      <div><label><input id="geiger" type="checkbox"> Geiger layer when 2+ people</label></div>
-      <div><label><input id="usemotion" type="checkbox"> Use movement to notice people far away</label></div>
-      <div><label for="msens">Movement sensitivity: <b id="msensv"></b></label><input id="msens" type="range" min="1" max="10" step="1" data-unit=""><span class="note">Raise it if far walkers are missed. Lower it if trees or shadows set it off.</span></div>
-      <div><label><input id="usecrop" type="checkbox"> Far zoom for the person model (sees further, reacts slower)</label></div>
-      <div><label for="farpos">Far zoom position</label><input id="farpos" type="range" min="10" max="90" step="1" data-unit="%"></div>
-      <div><label for="zoom">Far zoom strength: <b id="zoomv"></b></label><input id="zoom" type="range" min="1.5" max="5" step="0.5" data-unit="×"></div>
-    </div>
-    <div class="row"><button id="reset" class="secondary">Reset all settings</button></div>
+    <h2>Setting up in the alley</h2>
+    <p class="lede">1. Start, mount the phone, step out of view and tap <b>Learn empty alley</b>. 2. Someone stands at the far end: <b>Set far</b>. 3. They stand where beeping should be fastest: <b>Set close</b>.</p>
   </section>
 
   <section class="panel">
@@ -146,114 +105,95 @@ body.fs .hud{top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-in
 </main>
 
 <script type="module">
+import { DEFAULTS, cloudOn, currentUser, signIn, load, save, onChange, live as liveLink, getBlob, KINDS } from "../common/store.js";
+
 const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 const MODEL = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite";
 const $ = id => document.getElementById(id);
 const video = $("video"), overlay = $("overlay"), octx = overlay.getContext("2d"), hud = $("hud");
 
-// ---------------- Settings (saved on this phone) ----------------
-const DEFAULTS = {
-  slow: 1.5, fast: 0.08, curve: 1, hFar: 0.05, hNear: 0.8,
-  rate: 0.95, pitch: 0.7, voice: "",
-  closesecs: 3, groupsecs: 5, closeat: 0.75,
-  closelines: "I see you.\nYou are very close now.\nStanding still will not make you invisible.\nI have been watching this alley all day. You are the most interesting thing so far.\nPlease keep walking.",
-  grouplines: "Two of you. Interesting.\nGathering here has been noted.\nI am counting all of you.\nYou can stay. I am not going anywhere either.",
-  geiger: true, usemotion: true, msens: 6, usecrop: false, farpos: 45, zoom: 3,
-};
-let S = { ...DEFAULTS };
-try { Object.assign(S, JSON.parse(localStorage.getItem("ibs-proto") || "{}")); } catch {}
-const save = () => { try { localStorage.setItem("ibs-proto", JSON.stringify(S)); } catch {} };
-
-const KEYS = ["slow", "fast", "curve", "rate", "pitch", "closesecs", "groupsecs", "closeat", "msens", "farpos", "zoom"];
-function fmt(el) {
-  const v = +el.value;
-  if (el.dataset.pct) return Math.round(v * 100) + "%";
-  const dp = +el.step >= 1 ? 0 : (+el.step >= 0.1 ? 1 : 2);
-  return v.toFixed(dp) + (el.dataset.unit || "");
-}
-function bindAll(root = document) {
-  for (const k of KEYS) for (const el of root.querySelectorAll(`[data-key="${k}"], #${k}`)) {
-    el.value = S[k];
-    const show = () => { for (const o of document.querySelectorAll(`#${k}v, [data-out="${k}"]`)) o.textContent = fmt(el); };
-    el.oninput = () => { S[k] = +el.value; save(); for (const other of document.querySelectorAll(`[data-key="${k}"], #${k}`)) if (other !== el) other.value = el.value; show(); };
-    show();
-  }
-  for (const k of ["geiger", "usemotion", "usecrop"]) { $(k).checked = S[k]; $(k).onchange = () => { S[k] = $(k).checked; save(); }; }
-  for (const k of ["closelines", "grouplines"]) { $(k).value = S[k]; $(k).oninput = () => { S[k] = $(k).value; save(); }; }
-}
-// Quick sliders on the full-screen bar (copies of the main ones, kept in sync).
-const quick = $("quick");
-for (const [k, label, min, max, step, unit] of [
-  ["slow", "Gap when far", 0.3, 3, 0.05, " s"], ["fast", "Gap when close", 0.04, 0.6, 0.01, " s"],
-  ["curve", "How it speeds up", 0.4, 3, 0.1, ""], ["msens", "Movement sensitivity", 1, 10, 1, ""]]) {
-  const d = document.createElement("div");
-  d.innerHTML = `<label>${label}: <b data-out="${k}"></b></label><input type="range" data-key="${k}" min="${min}" max="${max}" step="${step}" data-unit="${unit}" aria-label="${label}">`;
-  quick.append(d);
-}
-bindAll();
-$("quickbtn").onclick = () => quick.classList.toggle("open");
-$("reset").onclick = () => { const keepVoice = S.voice; S = { ...DEFAULTS, voice: keepVoice }; save(); bindAll(); showRange(); note("Settings reset."); };
-
-function showRange() {
-  $("rangenote").textContent = `Far: person ${Math.round(S.hFar * 100)}% of screen height · Close: ${Math.round(S.hNear * 100)}%` +
-    (S.calibrated ? " · set from your alley" : " · default guess, set them for this alley");
-}
-showRange();
+let S = { ...DEFAULTS }, P = null, F = { close: [], group: [], beep: [], geiger: [] };
+let live = null;
 
 // ---------------- Log ----------------
 const logLines = [];
 function note(s) {
   const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  logLines.unshift(`${t}  ${s}`); if (logLines.length > 60) logLines.pop();
+  logLines.unshift(`${t}  ${s}`); if (logLines.length > 80) logLines.pop();
   $("log").textContent = logLines.join("\n");
+  live?.send("log", { line: `${t}  ${s}` });
 }
+function setConn(text, cls) { $("conn").textContent = text; $("conn").className = "conn " + cls; }
 
-// ---------------- Stored recordings (IndexedDB) ----------------
-const dbP = new Promise((res, rej) => {
-  const r = indexedDB.open("ibs-proto", 1);
-  r.onupgradeneeded = () => r.result.createObjectStore("files");
-  r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
-});
-async function dbGet(k) { const db = await dbP; return new Promise(res => { const q = db.transaction("files").objectStore("files").get(k); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); }); }
-async function dbSet(k, v) { const db = await dbP; return new Promise(res => { const tx = db.transaction("files", "readwrite"); tx.objectStore("files").put(v, k); tx.oncomplete = res; tx.onerror = res; }); }
-const FILES = { close: [], group: [], beep: [], geiger: [] };
-async function loadFiles() {
-  for (const k of Object.keys(FILES)) { try { FILES[k] = await dbGet(k); } catch { FILES[k] = []; } showFiles(k); }
+// ---------------- Settings from the studio ----------------
+async function loadAll() {
+  S = await load("settings"); P = await load("phone"); F = await load("files");
+  applyQuick();
 }
-function showFiles(k) {
-  const el = $(k + "filesinfo") || $(k + "fileinfo");
-  if (el) el.textContent = FILES[k].length ? FILES[k].map((f, i) => `${i + 1}. ${f.name}`).join("  ") : "";
+async function boot() {
+  if (cloudOn && !(await currentUser())) { $("loginpanel").hidden = false; setConn("Sign in to connect to the studio", "off"); return; }
+  try {
+    await loadAll();
+    if (cloudOn) {
+      setConn("Connected to studio", "on");
+      live = liveLink();
+      onChange(async (id, data) => {
+        if (id === "settings") { S = data; applyQuick(); if (master) master.gain.value = S.volume; note("Settings updated from studio."); }
+        if (id === "files") {
+          const changed = KINDS.filter(k => JSON.stringify(data[k]) !== JSON.stringify(F[k]));
+          F = data; if (audio) for (const k of changed) await decode(k);
+          if (changed.length) note(`Sounds updated: ${changed.join(", ")}.`);
+        }
+        if (id === "phone") P = data;
+      });
+      live.on("say", p => { if (audio) speak(p.kind, p.text); });
+      live.on("beep", () => { if (audio) play(beepSound()); });
+      live.on("relearn", () => relearn());
+      live.on("watch", () => { watchedAt = performance.now(); });
+    } else setConn("Not connected: settings stay on this phone", "off");
+  } catch (e) { setConn("Couldn't reach the studio: " + e.message, "bad"); }
+  publishVoices();
 }
-for (const [k, id] of [["close", "closefiles"], ["group", "groupfiles"], ["beep", "beepfile"], ["geiger", "geigerfile"]]) {
-  $(id).onchange = async () => {
-    FILES[k] = [...$(id).files].map(f => ({ name: f.name, blob: f }));
-    await dbSet(k, FILES[k]); showFiles(k); buffers[k] = null; if (audio) await decode(k);
-    note(`${FILES[k].length} recording(s) saved for ${k}.`);
-  };
+$("login").onsubmit = async e => {
+  e.preventDefault(); $("loginerr").textContent = "";
+  try { await signIn($("email").value, $("password").value); $("loginpanel").hidden = true; boot(); }
+  catch (err) { $("loginerr").textContent = err.message; }
+};
+
+// Quick sliders on the full-screen bar (saved to the studio too).
+const QUICK = [["slow", "Gap when far", 0.3, 3, 0.05, " s"], ["fast", "Gap when close", 0.04, 0.6, 0.01, " s"],
+  ["curve", "How it speeds up", 0.4, 3, 0.1, ""], ["msens", "Movement sensitivity", 1, 10, 1, ""]];
+for (const [k, label, min, max, step, unit] of QUICK) {
+  const d = document.createElement("div");
+  d.innerHTML = `<label>${label}: <b id="q${k}v"></b></label><input type="range" id="q${k}" min="${min}" max="${max}" step="${step}" aria-label="${label}">`;
+  $("quick").append(d);
+  const el = d.querySelector("input");
+  el.oninput = () => { S[k] = +el.value; $("q" + k + "v").textContent = (+el.value).toFixed(+step >= 1 ? 0 : +step >= 0.1 ? 1 : 2) + unit; save("settings", S, 600); };
 }
-$("clearclose").onclick = async () => { FILES.close = []; await dbSet("close", []); buffers.close = null; showFiles("close"); };
-$("cleargroup").onclick = async () => { FILES.group = []; await dbSet("group", []); buffers.group = null; showFiles("group"); };
-loadFiles();
+function applyQuick() {
+  for (const [k, , , , step, unit] of QUICK) { $("q" + k).value = S[k]; $("q" + k + "v").textContent = (+S[k]).toFixed(+step >= 1 ? 0 : +step >= 0.1 ? 1 : 2) + unit; }
+}
+$("quickbtn").onclick = () => $("quick").classList.toggle("open");
 
 // ---------------- Sound ----------------
 let audio, master, beepBuf, clickBuf;
 const buffers = { close: null, group: null, beep: null, geiger: null };
 async function decode(k) {
-  if (!FILES[k].length) { buffers[k] = null; return; }
   const out = [];
-  for (const f of FILES[k]) { try { out.push(await audio.decodeAudioData(await f.blob.arrayBuffer())); } catch { note(`Could not read ${f.name}.`); } }
-  buffers[k] = out;
+  for (const f of F[k] || []) {
+    try { const blob = await getBlob(f.path); if (blob) out.push(await audio.decodeAudioData(await blob.arrayBuffer())); }
+    catch (e) { note(`Could not load ${f.name}: ${e.message}`); }
+  }
+  buffers[k] = out.length ? out : null;
 }
 function initAudio() {
   if (audio) return;
   audio = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
-  master = audio.createGain(); master.connect(audio.destination);
-  // Built-in beep: 1 kHz, 80 ms, soft edges. Pitch never changes.
+  master = audio.createGain(); master.gain.value = S.volume ?? 1; master.connect(audio.destination);
   const sr = audio.sampleRate;
   beepBuf = audio.createBuffer(1, Math.round(sr * 0.08), sr);
   const b = beepBuf.getChannelData(0);
   for (let i = 0; i < b.length; i++) { const e = Math.min(1, i / (sr * 0.004), (b.length - i) / (sr * 0.01)); b[i] = Math.sin(2 * Math.PI * 1000 * i / sr) * 0.55 * e; }
-  // Built-in Geiger tick: a 3 ms noise burst.
   clickBuf = audio.createBuffer(1, Math.round(sr * 0.003), sr);
   const c = clickBuf.getChannelData(0);
   for (let i = 0; i < c.length; i++) c[i] = (Math.random() * 2 - 1) * (1 - i / c.length);
@@ -263,137 +203,142 @@ function play(buf, when = 0, gain = 1) {
   const g = audio.createGain(); g.gain.value = gain; s.connect(g); g.connect(master); s.start(when); return s;
 }
 const beepSound = () => (buffers.beep && buffers.beep[0]) || beepBuf;
-$("testbeep").onclick = async () => { initAudio(); await audio.resume(); await Promise.all(["beep"].map(decode)); play(beepSound()); };
 
 // ---------------- Voice ----------------
-function fillVoices() {
-  const vs = speechSynthesis.getVoices();
-  const sel = $("voice"); sel.innerHTML = "";
-  for (const v of vs) { const o = document.createElement("option"); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; sel.append(o); }
-  if (!vs.length) { const o = document.createElement("option"); o.textContent = "Default voice"; o.value = ""; sel.append(o); }
-  if (S.voice && vs.some(v => v.name === S.voice)) sel.value = S.voice;
-  else { const en = vs.find(v => /en[-_]IN/i.test(v.lang)) || vs.find(v => /^en/i.test(v.lang)); if (en) sel.value = en.name; }
+let voicesSent = "";
+function publishVoices() {
+  if (!("speechSynthesis" in window) || !P) return;
+  const vs = speechSynthesis.getVoices().map(v => ({ name: v.name, lang: v.lang }));
+  const key = JSON.stringify(vs);
+  if (!vs.length || key === voicesSent || key === JSON.stringify(P.voices)) return;
+  voicesSent = key; P = { ...P, voices: vs }; save("phone", P);
 }
-if ("speechSynthesis" in window) { fillVoices(); speechSynthesis.onvoiceschanged = fillVoices; }
-$("voice").onchange = () => { S.voice = $("voice").value; save(); };
+if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = publishVoices;
 
 let talking = false, talkTimer = null;
 const lineIdx = { close: 0, group: 0 };
 function showSay(t) { $("say").textContent = t; $("say").hidden = !t; }
 function endTalk() { talking = false; clearTimeout(talkTimer); showSay(""); }
-async function speak(kind) {
+function speak(kind, text) {
   if (talking) return;
   talking = true; silenceEffects();
-  const recs = buffers[kind];
+  const recs = text ? null : buffers[kind];
   if (recs && recs.length) {
     const i = lineIdx[kind]++ % recs.length;
-    note(`Said ${kind} recording ${i + 1} (${FILES[kind][i].name}).`);
+    note(`Said ${kind} recording ${i + 1} (${F[kind][i]?.name || ""}).`);
     const s = play(recs[i]); s.onended = endTalk;
     talkTimer = setTimeout(endTalk, recs[i].duration * 1000 + 800); return;
   }
-  const lines = S[kind + "lines"].split("\n").map(l => l.trim()).filter(Boolean);
-  if (!lines.length || !("speechSynthesis" in window)) { endTalk(); return; }
-  const i = lineIdx[kind]++ % lines.length;
-  const u = new SpeechSynthesisUtterance(lines[i]);
-  const v = speechSynthesis.getVoices().find(v => v.name === $("voice").value); if (v) { u.voice = v; u.lang = v.lang; }
-  u.rate = S.rate; u.pitch = S.pitch;
+  let line = text;
+  if (!line) {
+    const lines = (S[kind + "lines"] || "").split("\n").map(l => l.trim()).filter(Boolean);
+    if (!lines.length) { endTalk(); return; }
+    const i = lineIdx[kind]++ % lines.length; line = lines[i];
+  }
+  if (!("speechSynthesis" in window)) { endTalk(); return; }
+  const u = new SpeechSynthesisUtterance(line);
+  const v = speechSynthesis.getVoices().find(v => v.name === S.voice); if (v) { u.voice = v; u.lang = v.lang; }
+  u.rate = S.rate; u.pitch = S.pitch; u.volume = Math.min(1, S.volume ?? 1);
   u.onend = endTalk; u.onerror = endTalk;
-  showSay(lines[i]); note(`Said ${kind} line ${i + 1}: "${lines[i]}"`);
-  // Some phones never report the end of speech: give up waiting after a generous estimate.
-  talkTimer = setTimeout(endTalk, 2500 + lines[i].length * 110 / S.rate);
+  showSay(line); note(`Said: "${line}"`);
   speechSynthesis.cancel(); speechSynthesis.speak(u);
+  talkTimer = setTimeout(endTalk, 2500 + line.length * 110 / S.rate);
 }
-$("testclose").onclick = async () => { initAudio(); await audio.resume(); await decode("close"); speak("close"); };
-$("testgroup").onclick = async () => { initAudio(); await audio.resume(); await decode("group"); speak("group"); };
 
-// ---------------- Detection helpers ----------------
+// ---------------- Seeing ----------------
 const nextFrame = () => new Promise(r => video.requestVideoFrameCallback ? video.requestVideoFrameCallback(() => r()) : requestAnimationFrame(() => r()));
 const crop = document.createElement("canvas"), cctx = crop.getContext("2d");
-const MW = 160, MH = 90;
-const small = document.createElement("canvas"); small.width = MW; small.height = MH;
-const sctx = small.getContext("2d", { willReadFrequently: true });
-
-function cropRect() {
-  const vw = video.videoWidth, vh = video.videoHeight, f = 1 / S.zoom;
-  const sw = Math.round(vw * f), sh = Math.round(vh * f);
-  const sy = Math.max(0, Math.min(vh - sh, Math.round(vh * S.farpos / 100 - sh / 2)));
-  return { sx: Math.round((vw - sw) / 2), sy, sw, sh };
+const toBox = (d, ox = 0, oy = 0, k = 1) => ({ x: d.boundingBox.originX * k + ox, y: d.boundingBox.originY * k + oy, w: d.boundingBox.width * k, h: d.boundingBox.height * k });
+function overlapsAny(b, list) {
+  return list.some(o => {
+    const x1 = Math.max(b.x, o.x - o.w * 0.3), x2 = Math.min(b.x + b.w, o.x + o.w * 1.3);
+    const y1 = Math.max(b.y, o.y - o.h * 0.2), y2 = Math.min(b.y + b.h, o.y + o.h * 1.2);
+    return x2 > x1 && y2 > y1 && (x2 - x1) * (y2 - y1) > 0.3 * b.w * b.h;
+  });
 }
-const toBox = (d, ox = 0, oy = 0) => ({ x: d.boundingBox.originX + ox, y: d.boundingBox.originY + oy, w: d.boundingBox.width, h: d.boundingBox.height });
 function iou(a, b) {
   const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y), x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
   const i = Math.max(0, x2 - x1) * Math.max(0, y2 - y1); return i / (a.w * a.h + b.w * b.h - i || 1);
 }
 
-// Movement: compare tiny greyscale frames, keep the biggest moving shape.
-let prevG = null;
-const mask = new Uint8Array(MW * MH), grown = new Uint8Array(MW * MH), seen = new Uint8Array(MW * MH), stack = new Int32Array(MW * MH);
-function motionBlob() {
-  sctx.drawImage(video, 0, 0, MW, MH);
-  const px = sctx.getImageData(0, 0, MW, MH).data;
-  const g = new Uint8Array(MW * MH);
-  for (let i = 0, j = 0; i < px.length; i += 4, j++) g[j] = (px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8;
-  const prev = prevG; prevG = g; if (!prev) return null;
-  const thr = 46 - S.msens * 3.5; // sensitivity 1..10 → threshold ~42..11
+// The phone learns what the empty alley looks like and marks anything different from it.
+// That catches people walking straight at the camera and people standing still,
+// which frame-to-frame movement misses.
+const BW = 256, BH = 144, N = BW * BH;
+const small = document.createElement("canvas"); small.width = BW; small.height = BH;
+const sctx = small.getContext("2d", { willReadFrequently: true });
+let bg = null, bgFrames = 0, needRelearn = false;
+const fg = new Uint8Array(N), grown = new Uint8Array(N), seen = new Uint8Array(N), stack = new Int32Array(N), gray = new Uint8Array(N);
+function relearn() { needRelearn = true; note("Learning the empty alley."); }
+$("relearn").onclick = relearn;
+
+function shapes() {
+  sctx.drawImage(video, 0, 0, BW, BH);
+  const px = sctx.getImageData(0, 0, BW, BH).data;
+  for (let i = 0, j = 0; j < N; i += 4, j++) gray[j] = (px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8;
+  if (!bg || needRelearn) { bg = Float32Array.from(gray); bgFrames = 0; needRelearn = false; return []; }
+  bgFrames++;
+  const thr = 52 - S.msens * 4;
   let changed = 0;
-  for (let k = 0; k < g.length; k++) { mask[k] = Math.abs(g[k] - prev[k]) > thr ? 1 : 0; changed += mask[k]; }
-  if (changed < 3 || changed > g.length * 0.35) return null; // nothing, or whole image changed (shake, light)
-  // Grow by 1 px so a walking body's pieces join into one shape.
-  grown.fill(0);
-  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) if (mask[y * MW + x])
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const yy = y + dy, xx = x + dx; if (yy >= 0 && yy < MH && xx >= 0 && xx < MW) grown[yy * MW + xx] = 1; }
-  seen.fill(0); let best = null;
-  for (let k0 = 0; k0 < grown.length; k0++) {
-    if (!grown[k0] || seen[k0]) continue;
-    let sp = 0, n = 0, minx = MW, maxx = 0, miny = MH, maxy = 0; stack[sp++] = k0; seen[k0] = 1;
-    while (sp) {
-      const k = stack[--sp], x = k % MW, y = (k / MW) | 0; n++;
-      if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
-      for (const nk of [k - 1, k + 1, k - MW, k + MW]) {
-        if (nk < 0 || nk >= grown.length || seen[nk] || !grown[nk]) continue;
-        if ((nk === k - 1 && x === 0) || (nk === k + 1 && x === MW - 1)) continue;
-        seen[nk] = 1; stack[sp++] = nk;
-      }
-    }
-    if (!best || n > best.n) best = { n, minx, maxx, miny, maxy };
+  for (let k = 0; k < N; k++) { const f = Math.abs(gray[k] - bg[k]) > thr ? 1 : 0; fg[k] = f; changed += f; }
+  if (changed > N * 0.45) { // light changed or camera moved: catch up quickly, report nothing
+    for (let k = 0; k < N; k++) bg[k] = bg[k] * 0.6 + gray[k] * 0.4; return [];
   }
-  if (!best || best.n < 6) return null;
-  const sx = video.videoWidth / MW, sy = video.videoHeight / MH;
-  // Shape is a little taller than tall; very wide flat shapes are usually shadows or light.
-  const w = (best.maxx - best.minx + 1), h = (best.maxy - best.miny + 1);
-  if (w > h * 3) return null;
-  return { x: best.minx * sx, y: best.miny * sy, w: w * sx, h: Math.max(1, h - 2) * sy };
+  // Keep learning: fast where empty, very slow where something is (someone standing still fades after ~1 min).
+  for (let k = 0; k < N; k++) bg[k] += (fg[k] ? 0.002 : 0.04) * (gray[k] - bg[k]);
+  if (bgFrames < 6) return [];
+  grown.fill(0);
+  for (let y = 0; y < BH; y++) for (let x = 0; x < BW; x++) if (fg[y * BW + x]) {
+    const y0 = Math.max(0, y - 1), y1 = Math.min(BH - 1, y + 1), x0 = Math.max(0, x - 1), x1 = Math.min(BW - 1, x + 1);
+    for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) grown[yy * BW + xx] = 1;
+  }
+  seen.fill(0);
+  const out = [];
+  for (let k0 = 0; k0 < N; k0++) {
+    if (!grown[k0] || seen[k0]) continue;
+    let sp = 0, n = 0, minx = BW, maxx = 0, miny = BH, maxy = 0; stack[sp++] = k0; seen[k0] = 1;
+    while (sp) {
+      const k = stack[--sp], x = k % BW, y = (k / BW) | 0; n++;
+      if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
+      if (x > 0 && grown[k - 1] && !seen[k - 1]) { seen[k - 1] = 1; stack[sp++] = k - 1; }
+      if (x < BW - 1 && grown[k + 1] && !seen[k + 1]) { seen[k + 1] = 1; stack[sp++] = k + 1; }
+      if (y > 0 && grown[k - BW] && !seen[k - BW]) { seen[k - BW] = 1; stack[sp++] = k - BW; }
+      if (y < BH - 1 && grown[k + BW] && !seen[k + BW]) { seen[k + BW] = 1; stack[sp++] = k + BW; }
+    }
+    const w = maxx - minx + 1, h = maxy - miny - 1;
+    if (n < 10 || h < 3 || w > h * 2.5) continue; // specks, flat shadows and light patches
+    const sx = video.videoWidth / BW, sy = video.videoHeight / BH;
+    out.push({ x: (minx + 1) * sx, y: (miny + 1) * sy, w: Math.max(1, w - 2) * sx, h: h * sy, n });
+  }
+  return out.sort((a, b) => b.n - a.n).slice(0, 6);
 }
 
-// Closeness 0 (far end) → 1 (close point). People look smaller in proportion to distance,
-// so we compare sizes on a log scale: the beeps change evenly along the whole walk.
+// Closeness 0 (far point) → 1 (close point), on a log scale so beeps change evenly along the walk.
 function closenessOf(b) {
   const vh = video.videoHeight;
-  if (b.y + b.h > vh - 3 && b.h > vh * 0.5) return 1; // feet cut off and big: right in front
-  const r = Math.log((b.h / vh) / S.hFar) / Math.log(S.hNear / S.hFar);
+  if (b.y + b.h > vh - 3 && b.h > vh * 0.5) return 1;
+  const r = Math.log((b.h / vh) / P.hFar) / Math.log(P.hNear / P.hFar);
   return Math.min(1, Math.max(0, r));
 }
 
 // ---------------- Range setting ----------------
-const recent = []; // {t, h (fraction), src}
-function recentHeight(preferPerson) {
+const recent = [];
+function recentHeight() {
   const now = performance.now();
-  let r = recent.filter(e => now - e.t < 1500 && (!preferPerson || e.src === "person"));
-  if (!r.length && preferPerson) r = recent.filter(e => now - e.t < 1500);
+  let r = recent.filter(e => now - e.t < 1500 && e.src === "person");
+  if (!r.length) r = recent.filter(e => now - e.t < 1500);
   if (!r.length) return null;
   const hs = r.map(e => e.h).sort((a, b) => a - b); return hs[Math.floor(hs.length / 2)];
 }
+let flashT; function flash(t) { showSay(t); clearTimeout(flashT); flashT = setTimeout(() => { if (!talking) showSay(""); }, 2500); }
 $("setfar").onclick = () => {
-  const h = recentHeight(true);
-  if (!h) { flash("Nobody seen in the last second. Ask them to wave or step sideways, then tap again."); return; }
-  S.hFar = Math.min(h, S.hNear * 0.8); S.calibrated = true; save(); showRange(); flash(`Far set (${Math.round(S.hFar * 100)}% of screen).`); note("Far point set.");
+  const h = recentHeight(); if (!h) { flash("Nobody seen right now. Ask them to step sideways, then tap again."); return; }
+  P = { ...P, hFar: Math.min(h, P.hNear * 0.8), calibrated: true }; save("phone", P); flash(`Far set: ${Math.round(P.hFar * 100)}% of screen`); note("Far point set.");
 };
 $("setclose").onclick = () => {
-  const h = recentHeight(true);
-  if (!h) { flash("Nobody seen right now. Tap again when they're in view."); return; }
-  S.hNear = Math.max(h, S.hFar * 1.25); S.calibrated = true; save(); showRange(); flash(`Close set (${Math.round(S.hNear * 100)}% of screen).`); note("Close point set.");
+  const h = recentHeight(); if (!h) { flash("Nobody seen right now. Tap again when they're in view."); return; }
+  P = { ...P, hNear: Math.max(h, P.hFar * 1.25), calibrated: true }; save("phone", P); flash(`Close set: ${Math.round(P.hNear * 100)}% of screen`); note("Close point set.");
 };
-let flashT; function flash(t) { showSay(t); clearTimeout(flashT); flashT = setTimeout(() => { if (!talking) showSay(""); }, 2500); }
 
 // ---------------- Full screen ----------------
 function enterFs() {
@@ -406,8 +351,7 @@ $("exitfs").onclick = () => { document.body.classList.remove("fs"); if (document
 
 // ---------------- Main ----------------
 const GRACE = 1500, EMPTY_RESET = 1000, LOOK = 0.25;
-let effects = [];       // scheduled beeps / ticks that can be cancelled
-let geigerLoop = null, geigerGain = null;
+let effects = [], geigerLoop = null, geigerGain = null, watchedAt = -1e9;
 function silenceEffects() {
   const t = audio ? audio.currentTime : 0;
   for (const e of effects) if (e.when > t) try { e.src.stop(); } catch {}
@@ -422,22 +366,26 @@ async function start() {
   if ("speechSynthesis" in window) { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); }
   try { await navigator.wakeLock?.request("screen"); } catch {}
   await fs;
+  if (!P) await loadAll().catch(() => {});
+  P = P || { hFar: 0.05, hNear: 0.8, voices: [] };
   hud.textContent = "Starting camera…";
   try {
     video.srcObject = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } });
     await video.play();
-  } catch (e) { hud.textContent = "Camera blocked: allow camera access for this site and reload."; $("start").disabled = false; return; }
-  hud.textContent = "Loading the person model…";
-  await Promise.all(Object.keys(FILES).map(decode));
+  } catch { hud.textContent = "Camera blocked: allow camera access for this site and reload."; $("start").disabled = false; return; }
+  hud.textContent = "Loading sounds and the person model…";
+  await Promise.all(KINDS.map(decode));
   let det;
   try {
     const mod = await import(`${MP}/vision_bundle.mjs`);
     const files = await mod.FilesetResolver.forVisionTasks(`${MP}/wasm`);
     for (const delegate of ["GPU", "CPU"]) {
-      try { det = await mod.ObjectDetector.createFromOptions(files, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: "IMAGE", scoreThreshold: 0.3, maxResults: 10, categoryAllowlist: ["person"] }); break; } catch (e) { if (delegate === "CPU") throw e; }
+      try { det = await mod.ObjectDetector.createFromOptions(files, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: "IMAGE", scoreThreshold: 0.3, maxResults: 10, categoryAllowlist: ["person"] }); break; }
+      catch (e) { if (delegate === "CPU") throw e; }
     }
-  } catch (e) { hud.textContent = "Couldn't load the person model. Check the internet connection and reload."; return; }
-  note("Started.");
+  } catch { hud.textContent = "Couldn't load the person model. Check the internet connection and reload."; return; }
+  note("Started. Step out of view for 2 seconds so it can learn the empty alley.");
+  relearn();
   loop(det);
 }
 $("start").onclick = () => start().catch(e => { hud.textContent = "Error: " + (e.message || e); $("start").disabled = false; });
@@ -447,25 +395,23 @@ async function loop(det) {
   let nextBeep = 0, nextTick = 0, wasOn = false;
   let closeSince = null, closeLast = -1e9, closeFired = false;
   let groupSince = null, groupLast = -1e9, groupFired = false;
-  let turn = 0, wholeBoxes = [], cropBoxes = [], cropAt = -1e9, motion = null, motionAt = -1e9;
-  let n = 0, tw = performance.now(), rate = 0;
+  let turn = 0, wholeBoxes = [], zoomBoxes = [], zoomAt = -1e9, zoomRect = null;
+  let n = 0, tw = performance.now(), rate = 0, lastStatus = 0, lastSnap = 0;
+  const snap = document.createElement("canvas"); snap.width = 384; snap.height = 216; const snx = snap.getContext("2d");
 
   const gap = c => S.slow - (S.slow - S.fast) * Math.pow(c, S.curve);
-
-  // Books beeps (and Geiger ticks) a moment ahead on the sound clock.
   function pump() {
-    const t = audio.currentTime, now = performance.now();
+    const t = audio.currentTime;
     const on = present && !talking;
     if (!on) { if (wasOn) silenceEffects(); wasOn = false; return; }
     if (!wasOn) { nextBeep = t + 0.005; nextTick = t + 0.01; }
     wasOn = true;
     if (nextBeep < t) nextBeep = t + 0.005;
     while (nextBeep < t + LOOK) { effects.push({ src: play(beepSound(), nextBeep), when: nextBeep }); nextBeep += gap(close); }
-    // Geiger for 2+ people (original formula: closeness + crowd).
-    const crowd = Math.min((people - 2) / 4, 1);
-    const intensity = Math.min(1, 0.15 + 0.7 * close + 0.25 * Math.max(0, crowd));
+    const crowd = Math.max(0, Math.min((people - 2) / 4, 1));
+    const intensity = Math.min(1, 0.15 + 0.7 * close + 0.25 * crowd);
     if (S.geiger && people >= 2) {
-      if (buffers.geiger && buffers.geiger[0]) {
+      if (buffers.geiger) {
         if (!geigerLoop) { geigerGain = audio.createGain(); geigerLoop = audio.createBufferSource(); geigerLoop.buffer = buffers.geiger[0]; geigerLoop.loop = true; geigerLoop.connect(geigerGain); geigerGain.connect(master); geigerLoop.start(); }
         geigerGain.gain.setTargetAtTime(0.06 + intensity * 0.84, t, 0.05);
       } else {
@@ -480,85 +426,103 @@ async function loop(det) {
 
   for (;;) {
     await nextFrame();
-    if (S.usecrop && turn++ % 2 === 1) {
-      const r = cropRect();
-      if (crop.width !== r.sw || crop.height !== r.sh) { crop.width = r.sw; crop.height = r.sh; }
-      cctx.drawImage(video, r.sx, r.sy, r.sw, r.sh, 0, 0, r.sw, r.sh);
-      cropBoxes = det.detect(crop).detections.map(d => toBox(d, r.sx, r.sy)); cropAt = performance.now();
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const blobs = shapes();
+    const now0 = performance.now();
+    const people0 = [...wholeBoxes, ...(now0 - zoomAt < 900 ? zoomBoxes : [])];
+    const unconfirmed = blobs.filter(b => !overlapsAny(b, people0));
+
+    // Look: alternate the whole view with a zoom on the biggest unexplained shape.
+    if (S.autozoom && unconfirmed.length && turn++ % 2 === 1) {
+      const b = unconfirmed[0];
+      const side = Math.min(vh, Math.max(256, b.h * 2.6));
+      const sx = Math.max(0, Math.min(vw - side, b.x + b.w / 2 - side / 2)), sy = Math.max(0, Math.min(vh - side, b.y + b.h / 2 - side / 2));
+      const cs = Math.min(side, 512), k = side / cs;
+      if (crop.width !== cs) { crop.width = cs; crop.height = cs; }
+      cctx.drawImage(video, sx, sy, side, side, 0, 0, cs, cs);
+      zoomBoxes = det.detect(crop).detections.map(d => toBox(d, sx, sy, k)); zoomAt = performance.now(); zoomRect = { x: sx, y: sy, w: side, h: side };
     } else wholeBoxes = det.detect(video).detections.map(d => toBox(d));
-    const m = S.usemotion ? motionBlob() : null;
-    const now = performance.now(), vh = video.videoHeight;
-    if (m) { motion = m; motionAt = now; }
+    const now = performance.now();
 
     const boxes = [...wholeBoxes];
-    if (S.usecrop && now - cropAt < 700) for (const b of cropBoxes) if (!boxes.some(o => iou(o, b) > 0.3)) boxes.push(b);
+    if (now - zoomAt < 900) for (const b of zoomBoxes) if (!boxes.some(o => iou(o, b) > 0.3)) boxes.push(b);
     for (const b of boxes) b.c = closenessOf(b);
-    const moving = motion && now - motionAt < 400 ? motion : null;
+    const shapesOnly = S.usemotion ? blobs.filter(b => !overlapsAny(b, boxes)) : [];
+    for (const b of shapesOnly) b.c = closenessOf(b);
 
     let target = null;
     if (boxes.length) {
       target = Math.max(...boxes.map(b => b.c)); src = "person";
       const full = boxes.filter(b => b.y + b.h < vh - 3);
       if (full.length === 1) recent.push({ t: now, h: full[0].h / vh, src: "person" });
-    } else if (moving) {
-      moving.c = closenessOf(moving); target = moving.c; src = "movement";
-      recent.push({ t: now, h: moving.h / vh, src: "movement" });
+    }
+    if (shapesOnly.length) {
+      const m = Math.max(...shapesOnly.map(b => b.c));
+      if (target === null || m > target) { target = m; src = "shape"; }
+      if (!boxes.length && shapesOnly.length === 1) recent.push({ t: now, h: shapesOnly[0].h / vh, src: "shape" });
     }
     while (recent.length > 60) recent.shift();
 
     const wasPresent = present;
-    if (target !== null) { close = (!present ? target : close * 0.5 + target * 0.5); lastSeen = now; present = true; }
+    if (target !== null) { close = !present ? target : close * 0.5 + target * 0.5; lastSeen = now; present = true; }
     else if (now - lastSeen > GRACE) present = false;
     if (present && !wasPresent) note(`Someone appeared (${src}).`);
     if (!present && wasPresent) note("Alley empty.");
     if (boxes.length) people = boxes.length; else if (now - lastSeen > GRACE) people = 0;
 
-    // Voice rules: close for N s (one person), 2+ people for N s. Group comes first.
+    // Voice: 2+ people for N s takes priority; otherwise one person close for N s.
     if (boxes.length >= 2) { groupLast = now; if (groupSince === null) groupSince = now; }
     else if (now - groupLast > GRACE) { groupSince = null; groupFired = false; }
-    const isClose = boxes.some(b => b.c >= S.closeat);
-    if (isClose) { closeLast = now; if (closeSince === null) closeSince = now; }
+    if (boxes.some(b => b.c >= S.closeat)) { closeLast = now; if (closeSince === null) closeSince = now; }
     else if (now - closeLast > GRACE) { closeSince = null; closeFired = false; }
     if (!present && now - lastSeen > GRACE + EMPTY_RESET) { groupSince = closeSince = null; groupFired = closeFired = false; }
     if (!talking) {
       if (groupSince !== null && !groupFired && now - groupSince >= S.groupsecs * 1000) { groupFired = true; speak("group"); }
-      // While a group is in view, the group line takes priority over the close line.
       else if (groupSince === null && closeSince !== null && !closeFired && now - closeSince >= S.closesecs * 1000) { closeFired = true; speak("close"); }
     }
     pump();
 
     n++; if (now - tw > 2000) { rate = n / ((now - tw) / 1000); tw = now; n = 0; }
-    draw(boxes, moving && !boxes.length ? moving : null);
+    draw(boxes, shapesOnly, now - zoomAt < 300 ? zoomRect : null);
     const dwell = closeSince !== null && !closeFired ? ` · close ${((now - closeSince) / 1000).toFixed(1)}/${S.closesecs}s` : "";
     const grp = groupSince !== null && !groupFired ? ` · group ${((now - groupSince) / 1000).toFixed(1)}/${S.groupsecs}s` : "";
-    hud.textContent = talking ? "speaking…" : present
+    const status = talking ? "speaking…" : bgFrames < 6 ? "learning the empty alley…" : present
       ? `${src} · closeness ${Math.round(close * 100)}% · gap ${gap(close).toFixed(2)} s · people ${people}${dwell}${grp}`
       : `watching · ${rate.toFixed(1)} looks/s`;
+    hud.textContent = status;
+    if (live && now - lastStatus > 350) { lastStatus = now; live.send("status", { status, close, present, people, talking }); }
+    if (live && now - watchedAt < 8000 && now - lastSnap > 1200) {
+      lastSnap = now;
+      snx.drawImage(video, 0, 0, 384, 216); snx.drawImage(overlay, 0, 0, 384, 216);
+      live.send("snap", { img: snap.toDataURL("image/jpeg", 0.55) });
+    }
   }
 }
 
-function draw(boxes, moving) {
+function draw(boxes, shapesOnly, zoomRect) {
   const vw = video.videoWidth, vh = video.videoHeight;
   if (overlay.width !== vw || overlay.height !== vh) { overlay.width = vw; overlay.height = vh; }
   octx.clearRect(0, 0, vw, vh);
   const lw = Math.max(2, vw / 400), fs = Math.max(18, vw / 50);
-  if (S.usecrop) { const r = cropRect(); octx.setLineDash([lw * 4, lw * 3]); octx.lineWidth = lw; octx.strokeStyle = "#ffb020"; octx.strokeRect(r.sx, r.sy, r.sw, r.sh); octx.setLineDash([]); }
+  if (zoomRect) { octx.setLineDash([lw * 4, lw * 3]); octx.lineWidth = lw; octx.strokeStyle = "#ffb020"; octx.strokeRect(zoomRect.x, zoomRect.y, zoomRect.w, zoomRect.h); octx.setLineDash([]); }
   octx.font = `600 ${fs}px ui-monospace, monospace`; octx.textBaseline = "bottom";
   const label = (b, color) => {
     octx.lineWidth = lw * 1.5; octx.strokeStyle = color; octx.strokeRect(b.x, b.y, b.w, b.h);
     const t = `${Math.round(b.c * 100)}%`, w = octx.measureText(t).width;
-    octx.fillStyle = "rgba(0,0,0,.65)"; octx.fillRect(b.x, b.y - fs - 6, w + 10, fs + 6);
-    octx.fillStyle = color; octx.fillText(t, b.x + 5, b.y - 3);
+    const ty = Math.max(fs + 6, b.y);
+    octx.fillStyle = "rgba(0,0,0,.65)"; octx.fillRect(b.x, ty - fs - 6, w + 10, fs + 6);
+    octx.fillStyle = color; octx.fillText(t, b.x + 5, ty - 3);
   };
   for (const b of boxes) label(b, b.c >= S.closeat ? "#ff5a3c" : "#19c37d");
-  if (moving) label(moving, "#ff4fd8");
-  // Closeness meter on the right edge, with the "close" line.
+  for (const b of shapesOnly) label(b, "#ff4fd8");
   const mx = vw - lw * 10, top = vh * 0.1, hgt = vh * 0.65;
-  const best = Math.max(0, ...boxes.map(b => b.c), moving ? moving.c : 0);
+  const best = Math.max(0, ...boxes.map(b => b.c), ...shapesOnly.map(b => b.c));
   octx.fillStyle = "rgba(0,0,0,.45)"; octx.fillRect(mx, top, lw * 6, hgt);
   octx.fillStyle = "#19c37d"; octx.fillRect(mx, top + hgt * (1 - best), lw * 6, hgt * best);
   octx.fillStyle = "#ff5a3c"; octx.fillRect(mx - lw * 2, top + hgt * (1 - S.closeat) - lw / 2, lw * 10, lw);
 }
+
+boot();
 </script>
 </body>
 </html>
